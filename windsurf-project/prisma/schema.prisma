@@ -1,0 +1,372 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  EMPLOYEE
+}
+
+enum ConversationStatus {
+  OPEN
+  CLOSED
+  TRANSFERRED
+  PENDING
+  BOT
+}
+
+enum SenderType {
+  CLIENT
+  USER
+  SYSTEM
+}
+
+enum ScheduledMessageStatus {
+  PENDING
+  SENT
+}
+
+enum IntegrationType {
+  WHATSAPP
+  INSTAGRAM
+  FACEBOOK
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  CONNECTING
+}
+
+enum LeadTemperature {
+  HOT
+  WARM
+  COLD
+  CONVERTED
+}
+
+enum LeadStatus {
+  NEW
+  IN_ATTENDANCE
+  WAITING
+  FOLLOW_UP
+  CLOSED
+  LOST
+}
+
+enum InvitationRole {
+  ADMIN
+  EMPLOYEE
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  OVERDUE
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  PENDING
+  RECEIVED
+  OVERDUE
+  REFUNDED
+}
+
+model Plan {
+  id             String   @id @default(uuid())
+  name           String
+  slug           String   @unique
+  price          Float
+  annualPrice    Float
+  maxNumbers     Int      @default(1)
+  maxEmployees   Int      @default(5)
+  maxTeamLeaders Int      @default(0)
+  features       Json     @default("[]")
+  founderSlots   Int      @default(10)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("plans")
+}
+
+model Company {
+  id             String   @id @default(uuid())
+  name           String
+  logo           String?
+  primaryColor   String?
+  secondaryColor String?
+  plan           String   @default("basic")
+  isActive           Boolean  @default(true)
+  lastAssignedUserId String?
+  createdAt          DateTime @default(now())
+
+  users             User[]
+  conversations     Conversation[]
+  products          Product[]
+  scheduledMessages ScheduledMessage[]
+  integrations      Integration[]
+  aiConfig          AiConfig?
+  tags              Tag[]
+  leads             Lead[]
+  invitations       Invitation[]
+  subscription      Subscription?
+
+  @@map("companies")
+}
+
+model User {
+  id                 String   @id @default(uuid())
+  name               String
+  email              String   @unique
+  password           String
+  role               Role     @default(EMPLOYEE)
+  companyId          String?
+  isActive           Boolean  @default(true)
+  isTeamLeader       Boolean  @default(false)
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
+
+  company       Company?       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  leads         Lead[]
+  invitations   Invitation[]
+
+  @@map("users")
+}
+
+model Conversation {
+  id           String             @id @default(uuid())
+  contactName  String
+  contactPhone String
+  assignedToId String?
+  companyId    String
+  leadId       String?
+  channel      IntegrationType    @default(WHATSAPP)
+  status       ConversationStatus @default(OPEN)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  assignedTo        User?              @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead              Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  messages          Message[]
+  scheduledMessages ScheduledMessage[]
+  tags              ConversationTag[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String     @id @default(uuid())
+  conversationId String
+  sender         SenderType
+  content        String
+  externalId     String?    @unique
+  createdAt      DateTime   @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model Product {
+  id               String   @id @default(uuid())
+  name             String
+  description      String?
+  price            Float
+  image            String?
+  imageUrl         String?
+  code             String?
+  category         String?
+  promotionalPrice Float?
+  stock            Int      @default(0)
+  active           Boolean  @default(true)
+  whatsappMessage  String?  @db.Text
+  companyId        String
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("products")
+}
+
+model ScheduledMessage {
+  id             String                 @id @default(uuid())
+  conversationId String
+  content        String
+  sendAt         DateTime
+  status         ScheduledMessageStatus @default(PENDING)
+  companyId      String
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("scheduled_messages")
+}
+
+model AiConfig {
+  id              String  @id @default(uuid())
+  companyId       String  @unique
+  aiName          String  @default("Assistente IA")
+  personality     String  @default("professional")
+  language        String  @default("pt-BR")
+  greeting        String  @default("Olá! Como posso ajudar?")
+  fallbackMessage String  @default("Desculpe, não entendi. Pode reformular?")
+  salesMode       Boolean @default(false)
+  autoReply       Boolean @default(true)
+  maxTokens       Int     @default(500)
+  temperature     Float   @default(0.7)
+  systemPrompt    String? @db.Text
+  productContext  String? @db.Text
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ai_configs")
+}
+
+model Tag {
+  id        String @id @default(uuid())
+  name      String
+  color     String @default("#6366f1")
+  category  String @default("general")
+  companyId String
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversationTags ConversationTag[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([name, companyId])
+  @@map("tags")
+}
+
+model ConversationTag {
+  id             String @id @default(uuid())
+  conversationId String
+  tagId          String
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tag          Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, tagId])
+  @@map("conversation_tags")
+}
+
+model Integration {
+  id               String            @id @default(uuid())
+  type             IntegrationType
+  token            String
+  companyId        String
+  status           IntegrationStatus @default(ACTIVE)
+  instanceName     String?           @unique
+  instanceId       String?
+  webhookUrl       String?
+  qrCode           String?           @db.Text
+  connectionStatus ConnectionStatus  @default(DISCONNECTED)
+  connectedAt      DateTime?
+  updatedAt        DateTime          @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("integrations")
+}
+
+model Lead {
+  id           String          @id @default(uuid())
+  name         String
+  phone        String
+  email        String?
+  temperature  LeadTemperature @default(COLD)
+  status       LeadStatus      @default(NEW)
+  notes        String?         @db.Text
+  companyId    String
+  assignedToId String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedTo    User?          @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  conversations Conversation[]
+
+  @@unique([phone, companyId])
+  @@map("leads")
+}
+
+model Invitation {
+  id        String           @id @default(uuid())
+  email     String
+  role      InvitationRole
+  companyId String?
+  invitedById String
+  token     String           @unique
+  status    InvitationStatus @default(PENDING)
+  expiresAt DateTime
+  createdAt DateTime         @default(now())
+
+  company   Company?         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invitedBy User             @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@map("invitations")
+}
+
+model Subscription {
+  id                  String             @id @default(uuid())
+  companyId           String             @unique
+  asaasCustomerId     String?
+  asaasSubscriptionId String?
+  plan                String             @default("basic")
+  value               Float
+  billingCycle        String             @default("MONTHLY")
+  status              SubscriptionStatus @default(ACTIVE)
+  isFounder           Boolean            @default(false)
+  nextDueDate         DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoices Invoice[]
+
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id             String        @id @default(uuid())
+  subscriptionId String
+  asaasPaymentId String?
+  value          Float
+  dueDate        DateTime
+  paidAt         DateTime?
+  status         InvoiceStatus @default(PENDING)
+  paymentUrl     String?
+  createdAt      DateTime      @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@map("invoices")
+}

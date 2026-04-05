@@ -1,0 +1,42 @@
+import { Router } from "express";
+import authRoutes from "../modules/auth/auth.routes";
+import userRoutes from "../modules/users/user.routes";
+import conversationRoutes from "../modules/conversations/conversation.routes";
+import messageRoutes from "../modules/messages/message.routes";
+import productRoutes from "../modules/products/product.routes";
+import scheduleRoutes from "../modules/schedule/schedule.routes";
+import dashboardRoutes from "../modules/dashboard/dashboard.routes";
+import integrationRoutes from "../modules/integrations/integration.routes";
+import evolutionRoutes from "../modules/integrations/evolution/evolution.routes";
+import companyRoutes from "../modules/companies/company.routes";
+import webhookRoutes from "../modules/webhook/webhook.routes";
+import aiConfigRoutes from "../modules/ai-config/aiConfig.routes";
+import tagRoutes from "../modules/tags/tag.routes";
+import leadRoutes from "../modules/leads/lead.routes";
+import invitationRoutes from "../modules/invitations/invitation.routes";
+import billingRoutes from "../modules/billing/billing.routes";
+import adminDashboardRoutes from "../modules/admin-dashboard/admin-dashboard.routes";
+import planRoutes from "../modules/plans/plan.routes";
+
+const router = Router();
+
+router.use("/auth", authRoutes);
+router.use("/users", userRoutes);
+router.use("/conversations", conversationRoutes);
+router.use("/messages", messageRoutes);
+router.use("/products", productRoutes);
+router.use("/schedule", scheduleRoutes);
+router.use("/dashboard", dashboardRoutes);
+router.use("/integrations", integrationRoutes);
+router.use("/integrations/whatsapp", evolutionRoutes);
+router.use("/companies", companyRoutes);
+router.use("/webhook", webhookRoutes);
+router.use("/ai-config", aiConfigRoutes);
+router.use("/tags", tagRoutes);
+router.use("/leads", leadRoutes);
+router.use("/invitations", invitationRoutes);
+router.use("/billing", billingRoutes);
+router.use("/admin", adminDashboardRoutes);
+router.use("/plans", planRoutes);
+
+export default router;
