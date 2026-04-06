@@ -4,6 +4,7 @@ export const createConversationSchema = z.object({
   contactName: z.string().min(1, 'Contact name is required'),
   contactPhone: z.string().min(1, 'Contact phone is required'),
   channel: z.enum(['WHATSAPP', 'INSTAGRAM', 'FACEBOOK']).default('WHATSAPP'),
+  leadId: z.string().uuid().optional(),
 });
 
 export const transferConversationSchema = z.object({

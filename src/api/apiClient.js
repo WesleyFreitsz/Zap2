@@ -152,6 +152,7 @@ export const dashboardApi = {
   getStats: () => apiClient.get("/dashboard/stats").then((r) => r.data.data),
   ranking: () => apiClient.get("/dashboard/ranking").then((r) => r.data.data),
   myStats: () => apiClient.get("/dashboard/my-stats").then((r) => r.data.data),
+  weeklyActivity: () => apiClient.get("/dashboard/weekly-activity").then((r) => r.data.data),
 };
 
 // ============ INTEGRATIONS ============
@@ -233,6 +234,26 @@ export const leadsApi = {
   update: (id, data) =>
     apiClient.put(`/leads/${id}`, data).then((r) => r.data.data),
   delete: (id) => apiClient.delete(`/leads/${id}`).then((r) => r.data),
+  request: (url, options = {}) => {
+    const method = options.method || 'GET';
+    const config = {
+      ...options,
+      url,
+      method,
+    };
+
+    if (method === 'GET') {
+      return apiClient.get(url).then(r => r.data.data);
+    } else if (method === 'POST') {
+      return apiClient.post(url, options.data).then(r => r.data.data);
+    } else if (method === 'PUT') {
+      return apiClient.put(url, options.data).then(r => r.data.data);
+    } else if (method === 'DELETE') {
+      return apiClient.delete(url).then(r => r.data.data);
+    } else {
+      return apiClient(config).then(r => r.data.data);
+    }
+  },
 };
 
 // ============ INVITATIONS ============

@@ -1,5 +1,12 @@
 import prisma from "../../config/prisma";
 
+export interface DayData {
+  day: string;
+  date: string;
+  mensagens: number;
+  ia: number;
+}
+
 export class DashboardService {
   async getOverview(companyId: string) {
     const [
@@ -169,6 +176,69 @@ export class DashboardService {
         }),
       ),
     };
+  }
+
+  async getWeeklyActivity(companyId: string): Promise<DayData[]> {
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay() - 1); // Start from Monday
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    // Get all messages from this week
+    const messages = await prisma.message.findMany({
+      where: {
+        conversation: { companyId },
+        createdAt: {
+          gte: startOfWeek,
+          lte: endOfWeek
+        }
+      },
+      select: {
+        createdAt: true,
+        sender: true,
+      }
+    });
+
+    // Helper to get day name in Portuguese
+    const getDayName = (date: Date) => {
+      const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+      return days[date.getDay()];
+    };
+
+    // Initialize week data
+    const weekData: DayData[] = [];
+    for (let i = 0; i < 7; i++) {
+      const currentDate = new Date(startOfWeek);
+      currentDate.setDate(startOfWeek.getDate() + i);
+
+      weekData.push({
+        day: getDayName(currentDate),
+        date: currentDate.toISOString().split('T')[0],
+        mensagens: 0,
+        ia: 0
+      });
+    }
+
+    // Count messages by day
+    messages.forEach(message => {
+      const messageDate = new Date(message.createdAt);
+      const dayIndex = messageDate.getDay();
+      const adjustedIndex = dayIndex === 0 ? 6 : dayIndex - 1; // Adjust to make Monday=0, Sunday=6
+
+      if (adjustedIndex >= 0 && adjustedIndex < 7) {
+        if (message.sender === 'CLIENT') {
+          weekData[adjustedIndex].mensagens++;
+        } else if (message.sender === 'USER') {
+          weekData[adjustedIndex].ia++;
+        }
+      }
+    });
+
+    return weekData;
   }
 
   async getEmployeeStats(companyId: string, userId: string) {

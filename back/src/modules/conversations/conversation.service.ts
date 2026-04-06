@@ -8,8 +8,37 @@ const userService = new UserService();
 const leadService = new LeadService();
 
 export class ConversationService {
+  private log(message: string, data?: any) {
+    console.log(`🔍 [CONVERSATION] ${message}`, data || "");
+  }
+
   async create(data: CreateConversationInput, companyId: string) {
-    const assignedToId = await userService.getNextEmployeeRoundRobin(companyId);
+    this.log("Tentando criar conversa", {
+      contactPhone: data.contactPhone,
+      leadId: data.leadId,
+      companyId,
+    });
+
+    const existingConversation = await prisma.conversation.findFirst({
+      where: {
+        companyId,
+        OR: [
+          { contactPhone: data.contactPhone },
+          data.leadId ? { leadId: data.leadId } : {},
+        ].filter((condition) => Object.keys(condition).length > 0),
+      },
+    });
+
+    if (existingConversation) {
+      this.log("Conversa já existe", { id: existingConversation.id });
+      throw new AppError(
+        "Já existe uma conversa em andamento para este lead",
+        409,
+      );
+    }
+
+    const assignedToId =
+      await userService.getNextEmployeeRoundRobin(companyId);
 
     const conversation = await prisma.conversation.create({
       data: {
@@ -20,10 +49,16 @@ export class ConversationService {
         companyId,
         assignedToId,
         status: "OPEN",
+        leadId: data.leadId,
       },
       include: {
         assignedTo: { select: { id: true, name: true, email: true } },
       },
+    });
+
+    this.log("Conversa criada", {
+      id: conversation.id,
+      leadId: data.leadId,
     });
 
     return this.formatConversation(conversation);
@@ -109,7 +144,12 @@ export class ConversationService {
     if (!conversation) throw new AppError("Conversation not found", 404);
 
     const targetUser = await prisma.user.findFirst({
-      where: { id: toUserId, companyId, role: "EMPLOYEE", isActive: true },
+      where: {
+        id: toUserId,
+        companyId,
+        role: "EMPLOYEE",
+        isActive: true,
+      },
     });
 
     if (!targetUser)
@@ -153,14 +193,19 @@ export class ConversationService {
     if (!conversation) throw new AppError("Conversation not found", 404);
 
     const updateData: any = {};
+
     if (data.contactName !== undefined)
       updateData.contactName = data.contactName;
+
     if (data.contactPhone !== undefined)
       updateData.contactPhone = data.contactPhone;
+
     if (data.contactRemoteId !== undefined)
       updateData.contactRemoteId = data.contactRemoteId;
+
     if (data.contactAvatarUrl !== undefined)
       updateData.contactAvatarUrl = data.contactAvatarUrl;
+
     if (data.leadId !== undefined) {
       if (data.leadId === null) {
         updateData.leadId = null;
@@ -170,13 +215,16 @@ export class ConversationService {
         });
 
         if (!lead) throw new AppError("Lead not found", 404);
+
         updateData.leadId = lead.id;
         updateData.contactPhone = lead.phone;
+
         if (lead.avatarUrl) {
           updateData.contactAvatarUrl = lead.avatarUrl;
         }
       }
     }
+
     if (data.status !== undefined) updateData.status = data.status;
 
     return prisma.conversation
@@ -194,7 +242,10 @@ export class ConversationService {
       .then((conversation) => this.formatConversation(conversation));
   }
 
-  async createLeadFromConversation(conversationId: string, companyId: string) {
+  async createLeadFromConversation(
+    conversationId: string,
+    companyId: string,
+  ) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
       include: {
@@ -207,6 +258,7 @@ export class ConversationService {
     });
 
     if (!conversation) throw new AppError("Conversation not found", 404);
+
     if (this.shouldHideConversation(conversation)) {
       throw new AppError(
         "This conversation cannot be converted to a lead",
@@ -305,14 +357,19 @@ export class ConversationService {
       conversation.lead?.phone ||
       conversation.contactPhone ||
       conversation.contactRemoteId;
+
     const displayPhone = this.getDisplayPhone(rawPhone);
+
     const displayName = this.hasUsableName(conversation.lead?.name)
       ? conversation.lead.name
       : this.hasUsableName(conversation.contactName)
         ? conversation.contactName
         : displayPhone || "Contato sem nome";
+
     const avatarUrl =
-      conversation.lead?.avatarUrl || conversation.contactAvatarUrl || null;
+      conversation.lead?.avatarUrl ||
+      conversation.contactAvatarUrl ||
+      null;
 
     return {
       ...conversation,

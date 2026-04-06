@@ -7,23 +7,49 @@ export class LeadService {
   async create(data: CreateLeadInput, companyId: string) {
     const phone = normalizePhone(data.phone);
 
+    console.log("🔍 [LEAD] Verificando telefone:", {
+      original: data.phone,
+      normalized: phone,
+      companyId,
+    });
+
     const existing = await prisma.lead.findUnique({
       where: { phone_companyId: { phone, companyId } },
     });
+
     if (existing) {
-      throw new AppError("Lead with this phone already exists", 409);
+      console.log("❌ [LEAD] Telefone já existe:", existing.phone);
+      throw new AppError("Lead com este telefone já existe", 409);
     }
 
-    return prisma.lead.create({
+    const lead = await prisma.lead.create({
       data: {
-        ...data,
+        name: data.name,
         phone,
+        email: data.email,
+        temperature: data.temperature,
+        status: data.status,
+        notes: data.notes,
         companyId,
+        assignedToId: data.assignedToId,
+        tags: data.tags
+          ? {
+              connect: data.tags.map((id) => ({ id })),
+            }
+          : undefined,
       },
       include: {
         assignedTo: { select: { id: true, name: true } },
+        tags: true,
       },
     });
+
+    console.log("✅ [LEAD] Lead criado:", {
+      id: lead.id,
+      phone: lead.phone,
+    });
+
+    return lead;
   }
 
   async findAll(
@@ -43,7 +69,6 @@ export class LeadService {
     if (filters.status) where.status = filters.status;
     if (filters.assignedToId) where.assignedToId = filters.assignedToId;
 
-    // EMPLOYEE only sees their own leads
     if (userRole === "EMPLOYEE" && userId) {
       where.assignedToId = userId;
     }
@@ -56,14 +81,19 @@ export class LeadService {
       ];
     }
 
-    return prisma.lead.findMany({
+    const leads = await prisma.lead.findMany({
       where,
       include: {
         assignedTo: { select: { id: true, name: true } },
+        tags: true, // 👈 substitui SQL bruto
         _count: { select: { conversations: true } },
       },
       orderBy: { updatedAt: "desc" },
     });
+
+    console.log("📋 [LEAD] Leads encontrados:", leads.length);
+
+    return leads;
   }
 
   async findById(id: string, companyId: string) {
@@ -71,6 +101,7 @@ export class LeadService {
       where: { id, companyId },
       include: {
         assignedTo: { select: { id: true, name: true } },
+        tags: true,
         conversations: {
           orderBy: { updatedAt: "desc" },
           take: 5,
@@ -78,17 +109,29 @@ export class LeadService {
         },
       },
     });
+
     if (!lead) throw new AppError("Lead not found", 404);
+
     return lead;
   }
 
   async update(id: string, companyId: string, data: UpdateLeadInput) {
-    const lead = await prisma.lead.findFirst({ where: { id, companyId } });
+    const lead = await prisma.lead.findFirst({
+      where: { id, companyId },
+    });
+
     if (!lead) throw new AppError("Lead not found", 404);
 
     const updateData: any = { ...data };
+
     if (data.phone) {
       updateData.phone = normalizePhone(data.phone);
+    }
+
+    if (data.tags) {
+      updateData.tags = {
+        set: data.tags.map((id) => ({ id })), // 👈 limpa + recria
+      };
     }
 
     const updatedLead = await prisma.lead.update({
@@ -96,6 +139,7 @@ export class LeadService {
       data: updateData,
       include: {
         assignedTo: { select: { id: true, name: true } },
+        tags: true,
       },
     });
 
@@ -120,11 +164,15 @@ export class LeadService {
   }
 
   async delete(id: string, companyId: string) {
-    const lead = await prisma.lead.findFirst({ where: { id, companyId } });
+    const lead = await prisma.lead.findFirst({
+      where: { id, companyId },
+    });
+
     if (!lead) throw new AppError("Lead not found", 404);
 
     await prisma.lead.delete({ where: { id } });
-    return { message: "Lead deleted successfully" };
+
+    return { message: "Lead deletado com sucesso" };
   }
 
   async findOrCreateByPhone(
@@ -136,7 +184,9 @@ export class LeadService {
     const normalized = normalizePhone(phone);
 
     let lead = await prisma.lead.findUnique({
-      where: { phone_companyId: { phone: normalized, companyId } },
+      where: {
+        phone_companyId: { phone: normalized, companyId },
+      },
     });
 
     if (!lead) {
@@ -150,6 +200,8 @@ export class LeadService {
           status: "NEW",
         },
       });
+
+      console.log("✅ [LEAD] Criado via findOrCreate:", lead.id);
     } else if (avatarUrl && !lead.avatarUrl) {
       lead = await prisma.lead.update({
         where: { id: lead.id },

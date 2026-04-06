@@ -21,6 +21,7 @@ import {
   Building2,
   Receipt,
   Crown,
+  Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -218,12 +219,12 @@ export default function Sidebar({ collapsed, onToggle }) {
   const navItems = isSuperAdmin
     ? superAdminNav
     : clientNav.filter((item) => {
-        if (!item.roles) return true;
-        if (item.roles.includes(effectiveRole)) return true;
-        if (effectiveRole === "TEAM_LEADER" && item.roles.includes("EMPLOYEE"))
-          return true;
-        return false;
-      });
+      if (!item.roles) return true;
+      if (item.roles.includes(effectiveRole)) return true;
+      if (effectiveRole === "TEAM_LEADER" && item.roles.includes("EMPLOYEE"))
+        return true;
+      return false;
+    });
 
   return (
     <aside

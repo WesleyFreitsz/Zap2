@@ -1,35 +1,32 @@
-import React, { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import React, { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { leadsApi } from "@/api/apiClient";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Flame, Snowflake, Thermometer } from "lucide-react";
+import { Flame, Snowflake, Thermometer, User, Phone, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 const tempConfig = {
-  hot: {
-    apiValue: "HOT",
-    label: "Hot",
+  HOT: {
+    label: "🔥 Hot",
+    color: "from-red-500 to-orange-500",
+    border: "border-red-200",
+    bg: "bg-red-50",
     icon: Flame,
-    bg: "bg-red-500/5 dark:bg-red-500/10",
-    border: "border-red-500/20",
-    header: "bg-red-500",
   },
-  warm: {
-    apiValue: "WARM",
-    label: "Warm",
+  WARM: {
+    label: "🌡️ Warm",
+    color: "from-amber-500 to-yellow-500",
+    border: "border-amber-200",
+    bg: "bg-amber-50",
     icon: Thermometer,
-    bg: "bg-amber-500/5 dark:bg-amber-500/10",
-    border: "border-amber-500/20",
-    header: "bg-amber-500",
   },
-  cold: {
-    apiValue: "COLD",
-    label: "Cold",
+  COLD: {
+    label: "❄️ Cold",
+    color: "from-blue-500 to-cyan-500",
+    border: "border-blue-200",
+    bg: "bg-blue-50",
     icon: Snowflake,
-    bg: "bg-blue-500/5 dark:bg-blue-500/10",
-    border: "border-blue-500/20",
-    header: "bg-blue-500",
   },
 };
 
@@ -42,126 +39,136 @@ const statusLabels = {
   LOST: "Perdido",
 };
 
+function LeadCard({ lead, onDragStart }) {
+  return (
+    <Card
+      draggable
+      onDragStart={() => onDragStart(lead)}
+      className="p-3 cursor-grab active:cursor-grabbing hover:shadow-md transition"
+    >
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold">
+          {(lead.name || lead.phone)?.charAt(0).toUpperCase()}
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-sm font-semibold truncate">
+            {lead.name || "Sem nome"}
+          </p>
+          <p className="text-[11px] text-muted-foreground truncate">
+            {lead.phone}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-1">
+        <Badge variant="outline" className="text-[10px]">
+          {statusLabels[lead.status] || lead.status}
+        </Badge>
+
+        {lead.assignedTo && (
+          <Badge variant="outline" className="text-[10px]">
+            {lead.assignedTo.name}
+          </Badge>
+        )}
+      </div>
+
+      {lead.notes && (
+        <p className="text-xs mt-2 text-muted-foreground line-clamp-2">
+          {lead.notes}
+        </p>
+      )}
+    </Card>
+  );
+}
+
 export default function ContactTemperatureBoard() {
-  const queryClient = useQueryClient();
-  const [draggingLeadId, setDraggingLeadId] = useState(null);
+  const qc = useQueryClient();
+  const [draggingLead, setDraggingLead] = useState(null);
 
   const { data: leads = [], isLoading } = useQuery({
-    queryKey: ["leads", "temperature-board"],
+    queryKey: ["leads"],
     queryFn: () => leadsApi.list(),
   });
 
-  const updateTemperatureMutation = useMutation({
-    mutationFn: ({ id, temperature }) => leadsApi.update(id, { temperature }),
+  const mutation = useMutation({
+    mutationFn: ({ id, temperature }) =>
+      leadsApi.update(id, { temperature }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["leads"] });
-      toast.success("Temperatura do lead atualizada.");
-    },
-    onError: (error) => {
-      toast.error(
-        error.response?.data?.message ||
-          "Erro ao atualizar temperatura do lead",
-      );
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      toast.success("Temperatura atualizada");
     },
   });
 
   const grouped = useMemo(
     () => ({
-      hot: leads.filter((lead) => lead.temperature === "HOT"),
-      warm: leads.filter((lead) => lead.temperature === "WARM"),
-      cold: leads.filter((lead) => lead.temperature === "COLD"),
+      HOT: leads.filter((l) => l.temperature === "HOT"),
+      WARM: leads.filter((l) => l.temperature === "WARM"),
+      COLD: leads.filter((l) => l.temperature === "COLD"),
     }),
-    [leads],
+    [leads]
   );
 
-  const handleDrop = (lead, temperature) => {
-    if (!lead || lead.temperature === temperature) return;
-    updateTemperatureMutation.mutate({ id: lead.id, temperature });
+  const handleDrop = (temperature) => {
+    if (!draggingLead || draggingLead.temperature === temperature) return;
+
+    mutation.mutate({
+      id: draggingLead.id,
+      temperature,
+    });
+
+    setDraggingLead(null);
   };
 
-  if (isLoading)
+  if (isLoading) {
     return (
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid md:grid-cols-3 gap-4">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-64 rounded-xl bg-muted animate-pulse" />
+          <div key={i} className="h-64 bg-muted animate-pulse" />
         ))}
       </div>
     );
+  }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      {Object.entries(tempConfig).map(([temp, cfg]) => {
-        const Icon = cfg.icon;
-        const list = grouped[temp] || [];
+    <div className="grid md:grid-cols-3 gap-4">
+      {Object.entries(tempConfig).map(([key, config]) => {
+        const Icon = config.icon;
+        const list = grouped[key];
+
         return (
           <div
-            key={temp}
-            className={`rounded-xl border ${cfg.border} ${cfg.bg} overflow-hidden`}
-            onDragOver={(event) => event.preventDefault()}
+            key={key}
+            className={`rounded-xl border ${config.border} ${config.bg}`}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={() => handleDrop(key)}
           >
+            {/* Header */}
             <div
-              className={`${cfg.header} px-4 py-3 flex items-center justify-between`}
+              className={`bg-gradient-to-r ${config.color} text-white p-3 flex justify-between`}
             >
-              <div className="flex items-center gap-2 text-white">
+              <div className="flex items-center gap-2">
                 <Icon className="w-4 h-4" />
-                <span className="font-bold text-sm">{cfg.label}</span>
+                <span className="font-bold text-sm">{config.label}</span>
               </div>
-              <span className="bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                {list.length}
-              </span>
+              <span className="text-xs font-bold">{list.length}</span>
             </div>
-            <div
-              className="p-3 space-y-2 min-h-[200px]"
-              onDrop={() => {
-                const lead = leads.find((item) => item.id === draggingLeadId);
-                handleDrop(lead, cfg.apiValue);
-                setDraggingLeadId(null);
-              }}
-            >
-              {list.length === 0 && (
-                <p className="text-xs text-center text-muted-foreground py-8">
-                  Nenhum contato aqui
+
+            {/* Cards */}
+            <div className="p-3 space-y-2 min-h-[200px]">
+              {list.length === 0 ? (
+                <p className="text-xs text-center text-muted-foreground py-6">
+                  Nenhum lead
                 </p>
+              ) : (
+                list.map((lead) => (
+                  <LeadCard
+                    key={lead.id}
+                    lead={lead}
+                    onDragStart={setDraggingLead}
+                  />
+                ))
               )}
-              {list.map((lead) => (
-                <Card
-                  key={lead.id}
-                  draggable
-                  onDragStart={() => setDraggingLeadId(lead.id)}
-                  onDragEnd={() => setDraggingLeadId(null)}
-                  className={`p-3 bg-card shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing ${draggingLeadId === lead.id ? "opacity-60" : ""}`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-semibold text-primary text-xs shrink-0">
-                      {(lead.name || lead.phone)?.charAt(0)?.toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate">
-                        {lead.name || lead.phone}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground truncate">
-                        {lead.phone}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-2 flex items-center gap-1 flex-wrap">
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] px-1.5 py-0"
-                    >
-                      {statusLabels[lead.status] || lead.status}
-                    </Badge>
-                    {lead.assignedTo?.name && (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] px-1.5 py-0"
-                      >
-                        {lead.assignedTo.name}
-                      </Badge>
-                    )}
-                  </div>
-                </Card>
-              ))}
             </div>
           </div>
         );

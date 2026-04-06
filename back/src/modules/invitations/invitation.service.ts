@@ -109,7 +109,15 @@ export class InvitationService {
     const roleName = data.role === "ADMIN" ? "Administrador" : "Funcionário";
 
     try {
-      await sendMail(
+      console.log("📧 [INVITATION] Preparing to send invitation email:", {
+        email: data.email,
+        role: data.role,
+        provisionalPassword: provisionalPassword,
+        loginUrl,
+        companyName: invitation.company?.name,
+      });
+
+      const result = await sendMail(
         data.email,
         `Bem-vindo à plataforma - Suas credenciais de acesso`,
         `
@@ -129,8 +137,20 @@ export class InvitationService {
         </div>
         `,
       );
+
+      console.log("✅ [INVITATION] Email sent successfully:", {
+        email: data.email,
+        messageId: result.messageId,
+      });
+
       logger.info(`[Invitation] Credentials sent to ${data.email}`);
     } catch (err) {
+      console.error("❌ [INVITATION] Failed to send invitation email:", {
+        email: data.email,
+        error: (err as Error).message,
+        stack: (err as Error).stack,
+      });
+
       logger.error(
         `[Invitation] Failed to send email to ${data.email}: ${(err as Error).message}`,
       );
