@@ -1,30 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 import prisma from "../../config/prisma";
 import { UserService } from "../users/user.service";
-import { EvolutionService } from "../integrations/evolution/evolution.service";
 import { logger } from "../../utils/logger";
 
 const userService = new UserService();
-const evolutionService = new EvolutionService();
 
 export class WebhookController {
-  async evolutionWebhook(
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ): Promise<void> {
-    try {
-      const companyId = req.params.companyId as string;
-      const result = await evolutionService.handleWebhookEvent(
-        companyId,
-        req.body,
-      );
-      res.status(200).json({ status: "success", data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
-
   async instagramIncoming(
     req: Request,
     res: Response,

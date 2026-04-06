@@ -2,6 +2,9 @@ import axios from "axios";
 
 const API_BASE_URL = "/api";
 
+const buildRequestConfig = (data) =>
+  data instanceof FormData ? {} : undefined;
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -13,6 +16,9 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("accessToken");
+    if (config.data instanceof FormData && config.headers) {
+      delete config.headers["Content-Type"];
+    }
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -80,6 +86,8 @@ export const usersApi = {
     apiClient.put(`/users/${id}`, data).then((r) => r.data.data),
   delete: (id) => apiClient.delete(`/users/${id}`).then((r) => r.data),
   getProfile: () => apiClient.get("/users/profile").then((r) => r.data.data),
+  updateProfile: (data) =>
+    apiClient.put("/users/profile", data).then((r) => r.data.data),
   changePassword: (data) =>
     apiClient.post("/users/change-password", data).then((r) => r.data.data),
 };
@@ -100,6 +108,8 @@ export const conversationsApi = {
     apiClient.post("/conversations/transfer", data).then((r) => r.data.data),
   close: (id) =>
     apiClient.patch(`/conversations/${id}/close`).then((r) => r.data.data),
+  createLead: (id) =>
+    apiClient.post(`/conversations/${id}/create-lead`).then((r) => r.data.data),
 };
 
 // ============ MESSAGES ============
@@ -114,9 +124,14 @@ export const messagesApi = {
 export const productsApi = {
   list: () => apiClient.get("/products").then((r) => r.data.data),
   getById: (id) => apiClient.get(`/products/${id}`).then((r) => r.data.data),
-  create: (data) => apiClient.post("/products", data).then((r) => r.data.data),
+  create: (data) =>
+    apiClient
+      .post("/products", data, buildRequestConfig(data))
+      .then((r) => r.data.data),
   update: (id, data) =>
-    apiClient.put(`/products/${id}`, data).then((r) => r.data.data),
+    apiClient
+      .put(`/products/${id}`, data, buildRequestConfig(data))
+      .then((r) => r.data.data),
   delete: (id) => apiClient.delete(`/products/${id}`).then((r) => r.data),
   sendToChat: (data) =>
     apiClient.post("/products/send-to-chat", data).then((r) => r.data.data),
@@ -150,26 +165,37 @@ export const integrationsApi = {
   delete: (id) => apiClient.delete(`/integrations/${id}`).then((r) => r.data),
 };
 
-// ============ WHATSAPP ============
+// ============ WHATSAPP (multi-session) ============
 export const whatsappApi = {
-  getConfig: () =>
-    apiClient.get("/integrations/whatsapp/config").then((r) => r.data.data),
-  saveConfig: (data) =>
+  // List all sessions for current company
+  sessions: () =>
+    apiClient.get("/integrations/whatsapp/sessions").then((r) => r.data.data),
+  // Create new session (validates plan limit)
+  connect: (label) =>
     apiClient
-      .put("/integrations/whatsapp/config", data)
+      .post("/integrations/whatsapp/connect", { label })
       .then((r) => r.data.data),
-  connect: () =>
-    apiClient.post("/integrations/whatsapp/connect").then((r) => r.data.data),
-  status: () =>
-    apiClient.get("/integrations/whatsapp/status").then((r) => r.data.data),
-  qrcode: () =>
-    apiClient.get("/integrations/whatsapp/qrcode").then((r) => r.data.data),
-  reconnect: () =>
-    apiClient.post("/integrations/whatsapp/reconnect").then((r) => r.data.data),
-  disconnect: () =>
+  // Status of specific session
+  status: (integrationId) =>
     apiClient
-      .post("/integrations/whatsapp/disconnect")
+      .get(`/integrations/whatsapp/status/${integrationId}`)
       .then((r) => r.data.data),
+  // QR code of specific session
+  qrcode: (integrationId) =>
+    apiClient
+      .get(`/integrations/whatsapp/qrcode/${integrationId}`)
+      .then((r) => r.data.data),
+  // Reconnect specific session
+  reconnect: (integrationId) =>
+    apiClient
+      .post(`/integrations/whatsapp/reconnect/${integrationId}`)
+      .then((r) => r.data.data),
+  // Disconnect specific session
+  disconnect: (integrationId) =>
+    apiClient
+      .post(`/integrations/whatsapp/disconnect/${integrationId}`)
+      .then((r) => r.data.data),
+  // Send message (integrationId optional, auto-selects if omitted)
   send: (data) =>
     apiClient
       .post("/integrations/whatsapp/send", data)

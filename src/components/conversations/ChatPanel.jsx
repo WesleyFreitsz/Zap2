@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useAuth } from "@/lib/AuthContext";
 import {
   Send,
   Bot,
@@ -26,6 +27,8 @@ export default function ChatPanel({ conversation, messages = [] }) {
   const [showProductModal, setShowProductModal] = useState(false);
   const scrollRef = useRef(null);
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -35,7 +38,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
 
   const sendMutation = useMutation({
     mutationFn: async (content) => {
-      await messagesApi.send({
+      return messagesApi.send({
         conversationId: conversation.id,
         content,
       });
@@ -47,6 +50,9 @@ export default function ChatPanel({ conversation, messages = [] }) {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       setInput("");
       setSuggestedReply("");
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || "Erro ao enviar mensagem");
     },
   });
 
@@ -71,7 +77,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
       .slice(-6)
       .map(
         (m) =>
-          `${m.sender === "contact" ? "Cliente" : "Atendente"}: ${m.content}`,
+          `${m.sender === "CLIENT" ? "Cliente" : "Atendente"}: ${m.content}`,
       )
       .join("\n");
 
@@ -112,14 +118,19 @@ export default function ChatPanel({ conversation, messages = [] }) {
         <div className="flex items-center gap-3">
           <Avatar className="h-9 w-9">
             <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
-              {conversation.contactName?.charAt(0)?.toUpperCase()}
+              {conversation.displayName?.charAt(0)?.toUpperCase() || "?"}
             </AvatarFallback>
           </Avatar>
           <div>
-            <p className="text-sm font-semibold">{conversation.contactName}</p>
+            <p className="text-sm font-semibold">{conversation.displayName}</p>
             <p className="text-xs text-muted-foreground">
-              {conversation.contactPhone}
+              {conversation.displayPhone || conversation.contactPhone}
             </p>
+            {isAdmin && conversation.assignedTo?.name && (
+              <p className="text-[11px] text-muted-foreground">
+                Responsável: {conversation.assignedTo.name}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3">

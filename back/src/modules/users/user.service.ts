@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import prisma from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
-import { CreateUserInput } from "./user.schema";
+import { CreateUserInput, UpdateProfileInput } from "./user.schema";
 
 export class UserService {
   async create(data: CreateUserInput, companyId: string) {
@@ -10,6 +10,13 @@ export class UserService {
     });
     if (existingUser) {
       throw new AppError("Email already registered", 409);
+    }
+
+    await this.ensureEmployeeLimit(companyId);
+    const isTeamLeader =
+      data.role === "EMPLOYEE" ? data.isTeamLeader || false : false;
+    if (isTeamLeader) {
+      await this.ensureTeamLeaderLimit(companyId);
     }
 
     const hashedPassword = await bcrypt.hash(data.password, 12);
@@ -21,12 +28,14 @@ export class UserService {
         password: hashedPassword,
         role: data.role as any,
         companyId,
+        isTeamLeader,
       },
       select: {
         id: true,
         name: true,
         email: true,
         role: true,
+        isTeamLeader: true,
         createdAt: true,
       },
     });
@@ -43,6 +52,7 @@ export class UserService {
         email: true,
         role: true,
         isActive: true,
+        isTeamLeader: true,
         createdAt: true,
       },
       orderBy: { createdAt: "desc" },
@@ -58,6 +68,7 @@ export class UserService {
         email: true,
         role: true,
         isActive: true,
+        isTeamLeader: true,
         createdAt: true,
       },
     });
@@ -70,15 +81,67 @@ export class UserService {
     const user = await prisma.user.findFirst({ where: { id, companyId } });
     if (!user) throw new AppError("User not found", 404);
 
+    const nextRole = data.role ?? user.role;
+    const nextIsTeamLeader =
+      nextRole === "EMPLOYEE"
+        ? (data.isTeamLeader ?? user.isTeamLeader)
+        : false;
+
+    if (nextIsTeamLeader && !user.isTeamLeader) {
+      await this.ensureTeamLeaderLimit(companyId);
+    }
+
     const updateData: any = { ...data };
     if (data.password) {
       updateData.password = await bcrypt.hash(data.password, 12);
+    }
+    if (nextRole !== "EMPLOYEE") {
+      updateData.isTeamLeader = false;
+    } else if (data.isTeamLeader !== undefined) {
+      updateData.isTeamLeader = data.isTeamLeader;
     }
 
     return prisma.user.update({
       where: { id },
       data: updateData,
-      select: { id: true, name: true, email: true, role: true, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        isTeamLeader: true,
+      },
+    });
+  }
+
+  async updateProfile(userId: string, data: UpdateProfileInput) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new AppError("User not found", 404);
+
+    return prisma.user.update({
+      where: { id: userId },
+      data: { name: data.name },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        isTeamLeader: true,
+        mustChangePassword: true,
+        createdAt: true,
+        company: {
+          select: {
+            id: true,
+            name: true,
+            logo: true,
+            primaryColor: true,
+            secondaryColor: true,
+            plan: true,
+          },
+        },
+      },
     });
   }
 
@@ -150,6 +213,12 @@ export class UserService {
     });
 
     if (employees.length === 0) {
+      // Fallback: assign to an ADMIN of this company
+      const admin = await prisma.user.findFirst({
+        where: { companyId, role: "ADMIN", isActive: true },
+        select: { id: true },
+      });
+      if (admin) return admin.id;
       throw new AppError("No active employees available", 400);
     }
 
@@ -176,5 +245,56 @@ export class UserService {
     });
 
     return assignedUserId;
+  }
+
+  private async getActivePlan(companyId: string) {
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { plan: true },
+    });
+
+    if (!company) {
+      throw new AppError("Company not found", 404);
+    }
+
+    return (prisma as any).plan.findFirst({
+      where: { slug: company.plan, isActive: true },
+    });
+  }
+
+  private async ensureEmployeeLimit(companyId: string) {
+    const plan = await this.getActivePlan(companyId);
+    if (!plan) return;
+
+    const currentUsers = await prisma.user.count({ where: { companyId } });
+    if (currentUsers >= plan.maxEmployees) {
+      throw new AppError(
+        `Limite do plano atingido: máximo de ${plan.maxEmployees} funcionário(s) no plano ${plan.name}`,
+        403,
+      );
+    }
+  }
+
+  private async ensureTeamLeaderLimit(companyId: string) {
+    const plan = await this.getActivePlan(companyId);
+    if (!plan) return;
+
+    if (plan.maxTeamLeaders <= 0) {
+      throw new AppError(
+        `O plano ${plan.name} não permite líderes de equipe. Faça upgrade para liberar esse recurso.`,
+        403,
+      );
+    }
+
+    const currentTeamLeaders = await prisma.user.count({
+      where: { companyId, role: "EMPLOYEE", isTeamLeader: true },
+    });
+
+    if (currentTeamLeaders >= plan.maxTeamLeaders) {
+      throw new AppError(
+        `Limite do plano atingido: máximo de ${plan.maxTeamLeaders} líder(es) de equipe no plano ${plan.name}`,
+        403,
+      );
+    }
   }
 }

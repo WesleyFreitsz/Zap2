@@ -94,6 +94,21 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
   }, []);
 
+  const updateUser = useCallback((nextUser) => {
+    setUser((prev) => {
+      const resolved =
+        typeof nextUser === "function"
+          ? nextUser(prev)
+          : { ...prev, ...nextUser };
+
+      if (resolved) {
+        localStorage.setItem("user", JSON.stringify(resolved));
+      }
+
+      return resolved;
+    });
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -104,6 +119,7 @@ export const AuthProvider = ({ children }) => {
         login,
         register,
         logout,
+        updateUser,
       }}
     >
       {children}

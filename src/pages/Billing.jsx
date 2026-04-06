@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { billingApi } from "@/api/apiClient";
+import { billingApi, plansApi } from "@/api/apiClient";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,13 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  getDisplayPlans,
+  getPlanBySlug,
+  getPlanFeatureList,
+  formatCurrency,
+} from "@/lib/planUtils";
+import { formatCpfCnpj, sanitizePersonName } from "@/lib/utils";
 
 const statusColors = {
   ACTIVE: "bg-green-100 text-green-700 border-green-200",
@@ -55,25 +62,29 @@ const invoiceStatusLabels = {
   REFUNDED: "Estornado",
 };
 
-const PLANS = [
-  { id: "basic", name: "Basico", price: 97 },
-  { id: "professional", name: "Profissional", price: 197 },
-  { id: "enterprise", name: "Enterprise", price: 497 },
-];
-
 export default function Billing() {
   const [showSubscribeModal, setShowSubscribeModal] = useState(false);
-  const qc = useQueryClient();
 
   const { data: subscription, isLoading: loadingSub } = useQuery({
     queryKey: ["subscription"],
     queryFn: () => billingApi.getSubscription(),
   });
 
+  const { data: plans = [] } = useQuery({
+    queryKey: ["plans", "billing"],
+    queryFn: () => plansApi.list({ active: true }),
+  });
+
   const { data: invoices = [], isLoading: loadingInv } = useQuery({
     queryKey: ["invoices"],
     queryFn: () => billingApi.getInvoices(),
   });
+
+  const displayPlans = useMemo(() => getDisplayPlans(plans), [plans]);
+  const currentPlan = useMemo(
+    () => getPlanBySlug(displayPlans, subscription?.plan),
+    [displayPlans, subscription?.plan],
+  );
 
   return (
     <div className="space-y-6">
@@ -100,10 +111,10 @@ export default function Billing() {
             <div>
               <p className="text-sm text-muted-foreground mb-1">Plano Atual</p>
               <p className="text-2xl font-bold capitalize">
-                {subscription.plan}
+                {currentPlan?.name || subscription.plan}
               </p>
               <p className="text-lg font-semibold text-primary mt-1">
-                R$ {subscription.value?.toFixed(2)}/mes
+                {formatCurrency(subscription.value)}/mês
               </p>
             </div>
             <Badge
@@ -119,6 +130,19 @@ export default function Billing() {
               Proxima cobranca:{" "}
               {new Date(subscription.nextDueDate).toLocaleDateString("pt-BR")}
             </p>
+          )}
+          {currentPlan && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {getPlanFeatureList(currentPlan).map((feature) => (
+                <Badge
+                  key={feature}
+                  variant="secondary"
+                  className="text-[10px]"
+                >
+                  {feature}
+                </Badge>
+              ))}
+            </div>
           )}
         </Card>
       ) : (
@@ -202,21 +226,31 @@ export default function Billing() {
       </Card>
 
       {showSubscribeModal && (
-        <SubscribeModal onClose={() => setShowSubscribeModal(false)} />
+        <SubscribeModal
+          plans={displayPlans}
+          onClose={() => setShowSubscribeModal(false)}
+        />
       )}
     </div>
   );
 }
 
-function SubscribeModal({ onClose }) {
+function SubscribeModal({ onClose, plans }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({
-    plan: "basic",
+    plan: plans[0]?.slug || "basic",
     customerName: "",
     customerEmail: "",
     cpfCnpj: "",
     billingType: "BOLETO",
   });
+
+  useEffect(() => {
+    if (!plans.length) return;
+    if (!plans.some((plan) => plan.slug === form.plan)) {
+      setForm((prev) => ({ ...prev, plan: plans[0].slug }));
+    }
+  }, [plans, form.plan]);
 
   const mutation = useMutation({
     mutationFn: (data) => billingApi.createSubscription(data),
@@ -230,7 +264,7 @@ function SubscribeModal({ onClose }) {
     },
   });
 
-  const selectedPlan = PLANS.find((p) => p.id === form.plan);
+  const selectedPlan = plans.find((p) => p.slug === form.plan);
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -255,17 +289,33 @@ function SubscribeModal({ onClose }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PLANS.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name} — R$ {p.price}/mes
+                {plans.map((p) => (
+                  <SelectItem key={p.slug} value={p.slug}>
+                    {p.name} — {formatCurrency(p.price)}/mês
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {selectedPlan && (
-              <p className="text-xs text-muted-foreground mt-1">
-                R$ {selectedPlan.price}/mes
-              </p>
+              <div className="mt-2 rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Mensal: {formatCurrency(selectedPlan.price)} /mês
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Anual: {formatCurrency(selectedPlan.annualPrice)} /mês
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {getPlanFeatureList(selectedPlan).map((feature) => (
+                    <Badge
+                      key={feature}
+                      variant="secondary"
+                      className="text-[10px]"
+                    >
+                      {feature}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
           <div>
@@ -273,8 +323,12 @@ function SubscribeModal({ onClose }) {
             <Input
               value={form.customerName}
               onChange={(e) =>
-                setForm({ ...form, customerName: e.target.value })
+                setForm({
+                  ...form,
+                  customerName: sanitizePersonName(e.target.value),
+                })
               }
+              autoComplete="name"
               required
             />
           </div>
@@ -293,7 +347,11 @@ function SubscribeModal({ onClose }) {
             <Label>CPF/CNPJ</Label>
             <Input
               value={form.cpfCnpj}
-              onChange={(e) => setForm({ ...form, cpfCnpj: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, cpfCnpj: formatCpfCnpj(e.target.value) })
+              }
+              inputMode="numeric"
+              maxLength={18}
             />
           </div>
           <div>
@@ -316,7 +374,12 @@ function SubscribeModal({ onClose }) {
             <Button type="button" variant="outline" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={mutation.isPending}>
+            <Button
+              type="submit"
+              disabled={
+                mutation.isPending || !selectedPlan || !form.customerName.trim()
+              }
+            >
               {mutation.isPending ? "Processando..." : "Assinar"}
             </Button>
           </div>

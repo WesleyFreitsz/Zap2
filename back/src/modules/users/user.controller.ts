@@ -81,12 +81,10 @@ export class UserController {
       const userId = req.user!.userId;
       const { currentPassword, newPassword } = req.body;
       if (!currentPassword || !newPassword) {
-        res
-          .status(400)
-          .json({
-            status: "error",
-            message: "currentPassword and newPassword are required",
-          });
+        res.status(400).json({
+          status: "error",
+          message: "currentPassword and newPassword are required",
+        });
         return;
       }
       const result = await userService.changePassword(
@@ -108,6 +106,20 @@ export class UserController {
     try {
       const userId = req.user!.userId;
       const result = await userService.getProfile(userId);
+      res.json({ status: "success", data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateProfile(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const result = await userService.updateProfile(userId, req.body);
       res.json({ status: "success", data: result });
     } catch (error) {
       next(error);

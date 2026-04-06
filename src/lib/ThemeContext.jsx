@@ -4,7 +4,14 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
 } from "react";
+import { Howl } from "howler";
+import {
+  DEFAULT_NOTIFICATION_SOUND,
+  getNotificationSoundUrl,
+  NOTIFICATION_SOUND_OPTIONS,
+} from "@/lib/notificationSounds";
 
 const ThemeContext = createContext();
 
@@ -50,9 +57,10 @@ function hexToHSL(hex) {
 export const ThemeProvider = ({ children }) => {
   const [darkMode, setDarkMode] = useState(() => {
     try {
-      return localStorage.getItem("darkMode") === "true";
+      const stored = localStorage.getItem("darkMode");
+      return stored == null ? true : stored === "true";
     } catch {
-      return false;
+      return true;
     }
   });
 
@@ -66,6 +74,16 @@ export const ThemeProvider = ({ children }) => {
       return DEFAULT_BRANDING;
     }
   });
+  const [notificationSound, setNotificationSoundState] = useState(() => {
+    try {
+      return (
+        localStorage.getItem("notificationSound") || DEFAULT_NOTIFICATION_SOUND
+      );
+    } catch {
+      return DEFAULT_NOTIFICATION_SOUND;
+    }
+  });
+  const notificationPlayerRef = useRef(null);
 
   // Apply dark mode class
   useEffect(() => {
@@ -106,6 +124,34 @@ export const ThemeProvider = ({ children }) => {
     }
   }, [branding.primaryColor, branding.secondaryColor, darkMode]);
 
+  useEffect(() => {
+    const soundUrl = getNotificationSoundUrl(notificationSound);
+
+    localStorage.setItem("notificationSound", notificationSound);
+
+    if (!soundUrl) {
+      notificationPlayerRef.current?.unload();
+      notificationPlayerRef.current = null;
+      return undefined;
+    }
+
+    const player = new Howl({
+      src: [soundUrl],
+      volume: 0.6,
+      preload: true,
+    });
+
+    notificationPlayerRef.current?.unload();
+    notificationPlayerRef.current = player;
+
+    return () => {
+      if (notificationPlayerRef.current === player) {
+        notificationPlayerRef.current = null;
+      }
+      player.unload();
+    };
+  }, [notificationSound]);
+
   const toggleDarkMode = useCallback(() => {
     setDarkMode((prev) => !prev);
   }, []);
@@ -133,6 +179,22 @@ export const ThemeProvider = ({ children }) => {
     root.style.removeProperty("--accent-foreground");
   }, []);
 
+  const setNotificationSound = useCallback((soundId) => {
+    const nextSound = NOTIFICATION_SOUND_OPTIONS.some(
+      (sound) => sound.id === soundId,
+    )
+      ? soundId
+      : DEFAULT_NOTIFICATION_SOUND;
+
+    setNotificationSoundState(nextSound);
+  }, []);
+
+  const playNotificationSound = useCallback(() => {
+    if (!notificationPlayerRef.current) return;
+    notificationPlayerRef.current.stop();
+    notificationPlayerRef.current.play();
+  }, []);
+
   // Load branding from company profile (called after login)
   const loadCompanyBranding = useCallback(
     (company) => {
@@ -158,6 +220,10 @@ export const ThemeProvider = ({ children }) => {
         branding,
         setBranding,
         resetBranding,
+        notificationSound,
+        setNotificationSound,
+        notificationSoundOptions: NOTIFICATION_SOUND_OPTIONS,
+        playNotificationSound,
         loadCompanyBranding,
       }}
     >

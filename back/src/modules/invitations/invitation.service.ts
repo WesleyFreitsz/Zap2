@@ -63,6 +63,16 @@ export class InvitationService {
       companyId = company.id;
     }
 
+    const isTeamLeader =
+      data.role === "EMPLOYEE" ? data.isTeamLeader || false : false;
+
+    if (companyId) {
+      await this.ensureEmployeeLimit(companyId);
+      if (isTeamLeader) {
+        await this.ensureTeamLeaderLimit(companyId);
+      }
+    }
+
     // Generate provisional password and create user immediately
     const provisionalPassword = generatePassword();
     const hashedPassword = await bcrypt.hash(provisionalPassword, 12);
@@ -74,7 +84,7 @@ export class InvitationService {
         password: hashedPassword,
         role: data.role as any,
         companyId: companyId || null,
-        isTeamLeader: data.isTeamLeader || false,
+        isTeamLeader,
         mustChangePassword: true,
       },
     });
@@ -207,5 +217,56 @@ export class InvitationService {
       expiresAt: invitation.expiresAt,
       expired: invitation.expiresAt < new Date(),
     };
+  }
+
+  private async getActivePlan(companyId: string) {
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { plan: true },
+    });
+
+    if (!company) {
+      throw new AppError("Company not found", 404);
+    }
+
+    return (prisma as any).plan.findFirst({
+      where: { slug: company.plan, isActive: true },
+    });
+  }
+
+  private async ensureEmployeeLimit(companyId: string) {
+    const plan = await this.getActivePlan(companyId);
+    if (!plan) return;
+
+    const currentUsers = await prisma.user.count({ where: { companyId } });
+    if (currentUsers >= plan.maxEmployees) {
+      throw new AppError(
+        `Limite do plano atingido: máximo de ${plan.maxEmployees} funcionário(s) no plano ${plan.name}`,
+        403,
+      );
+    }
+  }
+
+  private async ensureTeamLeaderLimit(companyId: string) {
+    const plan = await this.getActivePlan(companyId);
+    if (!plan) return;
+
+    if (plan.maxTeamLeaders <= 0) {
+      throw new AppError(
+        `O plano ${plan.name} não permite líderes de equipe. Faça upgrade para liberar esse recurso.`,
+        403,
+      );
+    }
+
+    const currentTeamLeaders = await prisma.user.count({
+      where: { companyId, role: "EMPLOYEE", isTeamLeader: true },
+    });
+
+    if (currentTeamLeaders >= plan.maxTeamLeaders) {
+      throw new AppError(
+        `Limite do plano atingido: máximo de ${plan.maxTeamLeaders} líder(es) de equipe no plano ${plan.name}`,
+        403,
+      );
+    }
   }
 }

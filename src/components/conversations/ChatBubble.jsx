@@ -4,9 +4,8 @@ import { Bot, User, Check, CheckCheck } from "lucide-react";
 import { format } from "date-fns";
 
 export default function ChatBubble({ message }) {
-  // Backend uses senderType: CONTACT | USER | BOT
-  const isContact = message.senderType === "CONTACT";
-  const isBot = message.senderType === "BOT";
+  const isContact = message.sender === "CLIENT";
+  const isBot = message.sender === "SYSTEM";
 
   const statusIcons = {
     sent: <Check className="w-3 h-3" />,

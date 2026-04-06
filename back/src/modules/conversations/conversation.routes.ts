@@ -17,6 +17,7 @@ router.use(authMiddleware, subscriptionGuard);
 
 router.get("/", controller.findAll);
 router.get("/:id", controller.findById);
+router.post("/:id/create-lead", controller.createLead);
 router.post("/", validate(createConversationSchema), controller.create);
 router.post(
   "/assign",

@@ -156,6 +156,8 @@ model Conversation {
   id           String             @id @default(uuid())
   contactName  String
   contactPhone String
+  contactRemoteId String?
+  contactAvatarUrl String?
   assignedToId String?
   companyId    String
   leadId       String?
@@ -180,6 +182,11 @@ model Message {
   sender         SenderType
   content        String
   externalId     String?    @unique
+  mediaType      String?
+  mediaUrl       String?
+  mimeType       String?
+  fileName       String?
+  fileSize       Int?
   createdAt      DateTime   @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -302,6 +309,7 @@ model Lead {
   id           String          @id @default(uuid())
   name         String
   phone        String
+  avatarUrl    String?
   email        String?
   temperature  LeadTemperature @default(COLD)
   status       LeadStatus      @default(NEW)

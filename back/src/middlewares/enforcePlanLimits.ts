@@ -73,3 +73,36 @@ export const checkEmployeeLimit = async (
     next(error);
   }
 };
+
+export const checkNumberLimit = async (
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const companyId = req.user?.companyId;
+    if (!companyId) return next();
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      include: { _count: { select: { integrations: true } } },
+    });
+    if (!company) return next();
+
+    const plan = await (prisma as any).plan.findFirst({
+      where: { slug: company.plan, isActive: true },
+    });
+    if (!plan) return next();
+
+    if (company._count.integrations >= plan.maxNumbers) {
+      throw new AppError(
+        `Limite do plano atingido: máximo de ${plan.maxNumbers} número(s) WhatsApp no plano ${plan.name}`,
+        403,
+      );
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};

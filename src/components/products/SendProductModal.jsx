@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { X, Search, Package, Send, Tag } from "lucide-react";
+import { toast } from "sonner";
 
 export default function SendProductModal({ conversationId, onClose }) {
   const qc = useQueryClient();
@@ -30,6 +31,9 @@ export default function SendProductModal({ conversationId, onClose }) {
       qc.invalidateQueries({ queryKey: ["conversations"] });
       onClose();
     },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || "Erro ao enviar produto");
+    },
   });
 
   const activeProducts = products.filter((p) => p.active);
@@ -41,10 +45,10 @@ export default function SendProductModal({ conversationId, onClose }) {
 
   const handleSelect = (product) => {
     setSelected(product);
-    const price = product.promotional_price || product.price;
+    const price = product.promotionalPrice || product.price;
     const priceStr = `R$ ${parseFloat(price).toFixed(2).replace(".", ",")}`;
     setCustomMessage(
-      product.whatsapp_message ||
+      product.whatsappMessage ||
         `🛍️ *${product.name}*\n${product.description ? product.description + "\n" : ""}${product.code ? `Cód: #${product.code}\n` : ""}💰 ${priceStr}\n\nDeseja fazer seu pedido? 😊`,
     );
   };
@@ -83,10 +87,10 @@ export default function SendProductModal({ conversationId, onClose }) {
             ) : (
               filtered.map((product) => {
                 const hasPromo =
-                  product.promotional_price &&
-                  product.promotional_price < product.price;
+                  product.promotionalPrice &&
+                  product.promotionalPrice < product.price;
                 const price = hasPromo
-                  ? product.promotional_price
+                  ? product.promotionalPrice
                   : product.price;
                 return (
                   <div
@@ -95,9 +99,9 @@ export default function SendProductModal({ conversationId, onClose }) {
                     className={`flex items-center gap-3 p-3 cursor-pointer transition-colors border-b last:border-0 hover:bg-muted ${selected?.id === product.id ? "bg-accent border-l-2 border-l-primary" : ""}`}
                   >
                     <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-                      {product.image_url ? (
+                      {product.imageUrl || product.image ? (
                         <img
-                          src={product.image_url}
+                          src={product.imageUrl || product.image}
                           alt=""
                           className="w-full h-full object-cover"
                         />

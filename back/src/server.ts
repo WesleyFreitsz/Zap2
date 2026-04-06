@@ -15,13 +15,12 @@ async function bootstrap() {
 
     // Check WhatsApp instances on startup
     try {
-      const { EvolutionService } =
-        await import("./modules/integrations/evolution/evolution.service");
-      const evolutionService = new EvolutionService();
-      await evolutionService.checkInstancesOnStartup();
+      const { wppConnectService } =
+        await import("./modules/integrations/wppconnect/wppconnect.service");
+      await wppConnectService.restoreSessionsOnStartup();
     } catch (err) {
       logger.warn(
-        `[Startup] Evolution instance check skipped: ${(err as Error).message}`,
+        `[Startup] WPPConnect session restore skipped: ${(err as Error).message}`,
       );
     }
 

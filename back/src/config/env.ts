@@ -13,12 +13,6 @@ export const env = {
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || "15m",
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || "7d",
 
-  EVOLUTION_API_URL: process.env.EVOLUTION_API_URL || "http://localhost:8080",
-  EVOLUTION_API_KEY: process.env.EVOLUTION_API_KEY || "",
-  EVOLUTION_WEBHOOK_BASE_URL:
-    process.env.EVOLUTION_WEBHOOK_BASE_URL ||
-    "http://localhost:3000/api/webhook",
-
   // SMTP (Nodemailer)
   SMTP_HOST: process.env.SMTP_HOST || "smtp.gmail.com",
   SMTP_PORT: Number(process.env.SMTP_PORT) || 587,

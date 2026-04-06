@@ -1,45 +1,127 @@
-import React, { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { conversationsApi, messagesApi } from "@/api/apiClient";
+import { useAuth } from "@/lib/AuthContext";
+import { useTheme } from "@/lib/ThemeContext";
+import { toast } from "sonner";
 import ContactList from "../components/conversations/ContactList";
 import ChatPanel from "../components/conversations/ChatPanel";
 
 export default function Conversations() {
-  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [selectedConversationId, setSelectedConversationId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const { user } = useAuth();
+  const { playNotificationSound } = useTheme();
+  const queryClient = useQueryClient();
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+  const latestMessageIdRef = useRef(null);
 
   const { data: conversations = [] } = useQuery({
     queryKey: ["conversations"],
     queryFn: () => conversationsApi.list(),
-    refetchInterval: 10000,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: true,
   });
 
+  const selectedConversation = useMemo(
+    () =>
+      conversations.find(
+        (conversation) => conversation.id === selectedConversationId,
+      ) || null,
+    [conversations, selectedConversationId],
+  );
+
   const { data: messages = [] } = useQuery({
-    queryKey: ["messages", selectedConversation?.id],
-    queryFn: () => messagesApi.list(selectedConversation.id),
-    enabled: !!selectedConversation?.id,
-    refetchInterval: 5000,
+    queryKey: ["messages", selectedConversationId],
+    queryFn: () => messagesApi.list(selectedConversationId),
+    enabled: !!selectedConversationId,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: true,
+  });
+
+  const createLeadMutation = useMutation({
+    mutationFn: (conversationId) => conversationsApi.createLead(conversationId),
+    onSuccess: (updatedConversation) => {
+      toast.success("Lead vinculado com sucesso.");
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      if (updatedConversation?.id) {
+        setSelectedConversationId(updatedConversation.id);
+      }
+    },
+    onError: (error) => {
+      toast.error(
+        error.response?.data?.message || "Erro ao criar ou vincular lead",
+      );
+    },
   });
 
   // Auto-select from URL param
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const convId = params.get("contact");
-    if (convId && conversations.length > 0) {
-      const found = conversations.find((c) => c.id === convId);
-      if (found) setSelectedConversation(found);
+    if (
+      convId &&
+      conversations.some((conversation) => conversation.id === convId)
+    ) {
+      setSelectedConversationId(convId);
     }
   }, [conversations]);
+
+  useEffect(() => {
+    if (
+      selectedConversationId &&
+      !conversations.some(
+        (conversation) => conversation.id === selectedConversationId,
+      )
+    ) {
+      setSelectedConversationId(null);
+    }
+  }, [conversations, selectedConversationId]);
+
+  useEffect(() => {
+    latestMessageIdRef.current = null;
+  }, [selectedConversationId]);
+
+  useEffect(() => {
+    if (!selectedConversationId || messages.length === 0) return;
+
+    const latestMessage = messages[messages.length - 1];
+    if (!latestMessage?.id) return;
+
+    if (!latestMessageIdRef.current) {
+      latestMessageIdRef.current = latestMessage.id;
+      return;
+    }
+
+    if (
+      latestMessage.id !== latestMessageIdRef.current &&
+      latestMessage.sender === "CLIENT"
+    ) {
+      playNotificationSound();
+    }
+
+    latestMessageIdRef.current = latestMessage.id;
+  }, [messages, playNotificationSound, selectedConversationId]);
 
   return (
     <div className="h-screen flex">
       <div className="w-[340px] shrink-0">
         <ContactList
           conversations={conversations}
-          selectedId={selectedConversation?.id}
-          onSelect={setSelectedConversation}
+          selectedId={selectedConversationId}
+          onSelect={(conversation) =>
+            setSelectedConversationId(conversation.id)
+          }
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
+          isAdmin={isAdmin}
+          onAddLead={(conversation) =>
+            createLeadMutation.mutate(conversation.id)
+          }
+          creatingLeadConversationId={
+            createLeadMutation.isPending ? createLeadMutation.variables : null
+          }
         />
       </div>
       <ChatPanel conversation={selectedConversation} messages={messages} />
