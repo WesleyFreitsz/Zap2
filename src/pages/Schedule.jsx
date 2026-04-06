@@ -3,6 +3,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import ScheduledMessages from "@/components/schedule/ScheduledMessages";
 import ContactTagsManager from "@/components/schedule/ContactTagsManager";
 import ContactTemperatureBoard from "@/components/schedule/ContactTemperatureBoard";
+import AiTemperatureControl from "@/components/schedule/AiTemperatureControl";
 
 export default function Schedule() {
   return (
@@ -19,6 +20,7 @@ export default function Schedule() {
           <TabsTrigger value="schedule">📅 Mensagens Agendadas</TabsTrigger>
           <TabsTrigger value="board">🌡️ Hot / Cold Board</TabsTrigger>
           <TabsTrigger value="tags">🏷️ Gerenciar Tags</TabsTrigger>
+          <TabsTrigger value="ai">🤖 IA de Temperatura</TabsTrigger>
         </TabsList>
 
         <TabsContent value="schedule" className="mt-4">
@@ -31,6 +33,10 @@ export default function Schedule() {
 
         <TabsContent value="tags" className="mt-4">
           <ContactTagsManager />
+        </TabsContent>
+
+        <TabsContent value="ai" className="mt-4">
+          <AiTemperatureControl />
         </TabsContent>
       </Tabs>
     </div>

@@ -42,6 +42,20 @@ export class DashboardController {
     }
   }
 
+  async weeklyActivity(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const companyId = req.user!.companyId!;
+      const result = await dashboardService.getWeeklyActivity(companyId);
+      res.status(200).json({ status: "success", data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async myStats(
     req: Request,
     res: Response,

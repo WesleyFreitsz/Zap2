@@ -1,19 +1,43 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { dashboardApi } from '@/api/apiClient';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const defaultData = [
-  { day: 'Seg', mensagens: 24, ia: 20 },
-  { day: 'Ter', mensagens: 38, ia: 32 },
-  { day: 'Qua', mensagens: 42, ia: 36 },
-  { day: 'Qui', mensagens: 31, ia: 28 },
-  { day: 'Sex', mensagens: 55, ia: 48 },
-  { day: 'Sáb', mensagens: 18, ia: 15 },
-  { day: 'Dom', mensagens: 12, ia: 10 },
+  { day: 'Seg', mensagens: 0, ia: 0 },
+  { day: 'Ter', mensagens: 0, ia: 0 },
+  { day: 'Qua', mensagens: 0, ia: 0 },
+  { day: 'Qui', mensagens: 0, ia: 0 },
+  { day: 'Sex', mensagens: 0, ia: 0 },
+  { day: 'Sáb', mensagens: 0, ia: 0 },
+  { day: 'Dom', mensagens: 0, ia: 0 },
 ];
 
-export default function ActivityChart({ data }) {
-  const chartData = data || defaultData;
+export default function ActivityChart() {
+  const { data: weeklyData, isLoading } = useQuery({
+    queryKey: ['weekly-activity'],
+    queryFn: () => dashboardApi.weeklyActivity(),
+    refetchInterval: 60000, // Atualiza a cada minuto
+  });
+
+  const chartData = weeklyData || defaultData;
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Atividade Semanal</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[260px]">
+            <Skeleton className="w-full h-full" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -36,12 +60,12 @@ export default function ActivityChart({ data }) {
               </defs>
               <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
               <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
-              <Tooltip 
-                contentStyle={{ 
-                  borderRadius: '12px', 
+              <Tooltip
+                contentStyle={{
+                  borderRadius: '12px',
                   border: '1px solid hsl(220, 13%, 91%)',
                   boxShadow: '0 4px 20px rgba(0,0,0,0.08)'
-                }} 
+                }}
               />
               <Area type="monotone" dataKey="mensagens" stroke="hsl(145, 65%, 42%)" fillOpacity={1} fill="url(#colorMsg)" strokeWidth={2} name="Mensagens" />
               <Area type="monotone" dataKey="ia" stroke="hsl(200, 70%, 50%)" fillOpacity={1} fill="url(#colorAI)" strokeWidth={2} name="Respostas IA" />

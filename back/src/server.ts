@@ -2,11 +2,16 @@ import app from "./app";
 import { env } from "./config/env";
 import { logger } from "./utils/logger";
 import prisma from "./config/prisma";
+import AiTemperatureScheduler from "./schedulers/ai-temperature.scheduler";
 
 async function bootstrap() {
   try {
     await prisma.$connect();
     logger.info("Database connected successfully");
+
+    // Iniciar scheduler de IA de temperatura
+    const aiScheduler = new AiTemperatureScheduler();
+    aiScheduler.start();
 
     // Check WhatsApp instances on startup
     try {
@@ -24,6 +29,7 @@ async function bootstrap() {
       logger.info(`Server running on port ${env.PORT} in ${env.NODE_ENV} mode`);
       logger.info(`Health check: http://localhost:${env.PORT}/health`);
       logger.info(`API base: http://localhost:${env.PORT}/api`);
+      logger.info(`🤖 AI Temperature Scheduler started`);
     });
   } catch (error) {
     logger.error("Failed to start server:", error);

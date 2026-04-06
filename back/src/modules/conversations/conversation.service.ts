@@ -7,6 +7,28 @@ const userService = new UserService();
 
 export class ConversationService {
   async create(data: CreateConversationInput, companyId: string) {
+    console.log("🔍 [CONVERSATION] Tentando criar conversa:", {
+      contactPhone: data.contactPhone,
+      leadId: data.leadId,
+      companyId
+    });
+
+    // Verificar se já existe conversa para este lead/telefone
+    const existingConversation = await prisma.conversation.findFirst({
+      where: {
+        companyId,
+        OR: [
+          { contactPhone: data.contactPhone },
+          data.leadId ? { leadId: data.leadId } : {}
+        ].filter(condition => Object.keys(condition).length > 0)
+      },
+    });
+
+    if (existingConversation) {
+      console.log("❌ [CONVERSATION] Conversa já existe:", existingConversation.id);
+      throw new AppError("Já existe uma conversa em andamento para este lead", 409);
+    }
+
     const assignedToId = await userService.getNextEmployeeRoundRobin(companyId);
 
     const conversation = await prisma.conversation.create({
@@ -17,11 +39,14 @@ export class ConversationService {
         companyId,
         assignedToId,
         status: "OPEN",
+        leadId: data.leadId,
       },
       include: {
         assignedTo: { select: { id: true, name: true, email: true } },
       },
     });
+
+    console.log("✅ [CONVERSATION] Conversa criada:", { id: conversation.id, leadId: data.leadId });
 
     return conversation;
   }

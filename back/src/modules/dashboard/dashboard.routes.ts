@@ -12,6 +12,7 @@ router.use(authMiddleware, subscriptionGuard);
 router.get("/overview", authorize("ADMIN", "SUPER_ADMIN"), controller.overview);
 router.get("/stats", authorize("ADMIN", "SUPER_ADMIN"), controller.stats);
 router.get("/ranking", authorize("ADMIN", "SUPER_ADMIN"), controller.ranking);
+router.get("/weekly-activity", controller.weeklyActivity);
 router.get("/my-stats", controller.myStats);
 
 export default router;

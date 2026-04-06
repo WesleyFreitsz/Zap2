@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { leadsApi } from "@/api/apiClient";
+import { leadsApi, usersApi, conversationsApi, tagsApi } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -29,8 +29,12 @@ import {
   Snowflake,
   ThermometerSun,
   CheckCircle2,
+  MessageSquare,
+  UserCheck,
+  Tag,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "../lib/AuthContext";
 
 const tempColors = {
   HOT: "bg-red-100 text-red-700 border-red-200",
@@ -66,9 +70,15 @@ export default function Leads() {
   const [search, setSearch] = useState("");
   const [tempFilter, setTempFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [showTagModal, setShowTagModal] = useState(false);
+  const [selectedLeadForTags, setSelectedLeadForTags] = useState(null);
+  const [leadTags, setLeadTags] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [selectedLead, setSelectedLead] = useState(null);
   const [editing, setEditing] = useState(null);
   const qc = useQueryClient();
+  const { user } = useAuth();
 
   const params = {};
   if (tempFilter !== "ALL") params.temperature = tempFilter;
@@ -80,6 +90,17 @@ export default function Leads() {
     queryFn: () => leadsApi.list(params),
   });
 
+  const { data: employees = [] } = useQuery({
+    queryKey: ["employees"],
+    queryFn: () => usersApi.list(),
+    enabled: showTransferModal,
+  });
+
+  const { data: tags = [] } = useQuery({
+    queryKey: ["tags"],
+    queryFn: () => tagsApi.list(),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id) => leadsApi.delete(id),
     onSuccess: () => {
@@ -88,28 +109,156 @@ export default function Leads() {
     },
   });
 
+  const startConversationMutation = useMutation({
+    mutationFn: (lead) => conversationsApi.create({
+      contactName: lead.name,
+      contactPhone: lead.phone,
+      companyId: user.companyId,
+      leadId: lead.id,
+    }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      qc.invalidateQueries({ queryKey: ["leads"] }); // Atualizar contador de conversas
+      toast.success("Conversa iniciada com sucesso");
+
+      // Redirecionar para a conversa criada
+      if (data?.data?.id) {
+        window.location.href = `/conversations/${data.data.id}`;
+      }
+    },
+    onError: (err) => {
+      if (err?.response?.status === 409) {
+        toast.info("Conversa já existe, redirecionando...");
+        // Buscar conversa existente e redirecionar
+        conversationsApi.list({ search: err.response.data.phone }).then(conversations => {
+          const existingConversation = conversations.data?.[0];
+          if (existingConversation) {
+            window.location.href = `/conversations/${existingConversation.id}`;
+          }
+        });
+      } else {
+        toast.error(err?.response?.data?.message || "Erro ao iniciar conversa");
+      }
+    },
+  });
+
+  const transferLeadMutation = useMutation({
+    mutationFn: ({ leadId, employeeId }) => leadsApi.update(leadId, {
+      assignedToId: employeeId,
+      status: "IN_ATTENDANCE",
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      toast.success("Lead transferido com sucesso");
+      setShowTransferModal(false);
+      setSelectedLead(null);
+    },
+    onError: (err) => {
+      toast.error(err?.response?.data?.message || "Erro ao transferir lead");
+    },
+  });
+
+  const assignTagsMutation = useMutation({
+    mutationFn: ({ leadId, tags }) => leadsApi.update(leadId, { tags }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      toast.success("Tags atribuídas com sucesso!");
+      setShowTagModal(false);
+      setSelectedLeadForTags(null);
+    },
+    onError: (err) => {
+      console.error("Erro ao atribuir tags:", err);
+      toast.error(err?.response?.data?.message || "Erro ao atribuir tags");
+      setShowTagModal(false); // Fechar modal mesmo em caso de erro
+      setSelectedLeadForTags(null);
+    },
+  });
+
+  const handleStartConversation = (lead) => {
+    // Desabilitar botão durante processamento
+    if (startConversationMutation.isPending) {
+      return;
+    }
+
+    // Verificar se já existe conversa para este lead
+    if (lead._count.conversations > 0) {
+      toast.info("Redirecionando para conversa existente...");
+      // Buscar a conversa existente e redirecionar
+      conversationsApi.list({ search: lead.phone }).then(conversations => {
+        const existingConversation = conversations.data?.find(c =>
+          c.contactPhone === lead.phone || c.leadId === lead.id
+        );
+        if (existingConversation) {
+          window.location.href = `/conversations/${existingConversation.id}`;
+        }
+      });
+      return;
+    }
+
+    startConversationMutation.mutate(lead);
+  };
+
+  const handleTransferLead = (lead) => {
+    setSelectedLead(lead);
+    setShowTransferModal(true);
+  };
+
+  const handleAssignTags = (lead) => {
+    setSelectedLeadForTags(lead);
+    setLeadTags(lead.tags?.map(t => t.id) || []);
+    setShowTagModal(true);
+  };
+
+  const handleSaveTags = () => {
+    if (selectedLeadForTags && leadTags.length > 0) {
+      try {
+        assignTagsMutation.mutate({
+          leadId: selectedLeadForTags.id,
+          tags: leadTags
+        });
+      } catch (error) {
+        console.error("Erro ao salvar tags:", error);
+        toast.error("Erro ao salvar tags");
+        setShowTagModal(false);
+        setSelectedLeadForTags(null);
+      }
+    } else {
+      toast.error("Selecione pelo menos uma tag");
+    }
+  };
+
+  const handleTransferToEmployee = (employeeId) => {
+    if (selectedLead) {
+      transferLeadMutation.mutate({
+        leadId: selectedLead.id,
+        employeeId,
+      });
+    }
+  };
+
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
+        <div className="my-3 mx-4">
           <h1 className="text-2xl font-bold">Leads</h1>
           <p className="text-sm text-muted-foreground">
             Gerencie seus leads e oportunidades
           </p>
         </div>
-        <Button
+        <Button className="my-3 mx-4"
           onClick={() => {
             setEditing(null);
             setShowModal(true);
           }}
-          className="gap-2"
         >
           <Plus className="w-4 h-4" /> Novo Lead
         </Button>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3 my-3 mx-4">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -155,7 +304,7 @@ export default function Leads() {
           ))}
         </div>
       ) : leads.length === 0 ? (
-        <Card className="p-12 text-center">
+        <Card className="p-12 text-center ">
           <p className="text-muted-foreground">Nenhum lead encontrado</p>
         </Card>
       ) : (
@@ -163,7 +312,7 @@ export default function Leads() {
           {leads.map((lead) => {
             const TempIcon = tempIcons[lead.temperature] || Snowflake;
             return (
-              <Card key={lead.id} className="p-4 hover:shadow-lg transition-shadow">
+              <Card key={lead.id} className="p-4 my-3 mx-4 hover:shadow-lg transition-shadow">
                 <div className="flex items-start justify-between mb-2">
                   <div>
                     <p className="font-semibold">{lead.name}</p>
@@ -200,18 +349,79 @@ export default function Leads() {
                     {lead.notes}
                   </p>
                 )}
-                <div className="flex gap-2">
+
+                {/* Tags */}
+                {lead.tags && lead.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {lead.tags.map((tag) => (
+                      <span
+                        key={tag.id}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${getTagColor(
+                          tag.category
+                        )}`}
+                      >
+                        {tag.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Atribuir Tags ao Contato */}
+                <div className="flex items-center gap-2 mb-3">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 h-7 text-xs"
-                    onClick={() => {
-                      setEditing(lead);
-                      setShowModal(true);
-                    }}
+                    className="text-xs"
+                    onClick={() => handleAssignTags(lead)}
                   >
-                    <Pencil className="w-3 h-3 mr-1" /> Editar
+                    <Tag className="w-3 h-3 mr-1" />
+                    Atribuir Tags
                   </Button>
+                </div>
+
+                <div className="flex gap-2">
+                  {isAdmin ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-7 text-xs"
+                        onClick={() => {
+                          setEditing(lead);
+                          setShowModal(true);
+                        }}
+                      >
+                        <Pencil className="w-3 h-3 mr-1" /> Editar
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-7 text-xs"
+                        onClick={() => handleStartConversation(lead)}
+                        disabled={startConversationMutation.isPending}
+                      >
+                        <MessageSquare className="w-3 h-3 mr-1" /> Iniciar Conversa
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-7 text-xs"
+                        onClick={() => handleTransferLead(lead)}
+                      >
+                        <UserCheck className="w-3 h-3 mr-1" /> Transferir
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 h-7 text-xs"
+                      onClick={() => handleStartConversation(lead)}
+                      disabled={startConversationMutation.isPending}
+                    >
+                      <MessageSquare className="w-3 h-3 mr-1" /> Iniciar Conversa
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -236,6 +446,86 @@ export default function Leads() {
           }}
         />
       )}
+
+      {showTransferModal && (
+        <TransferModal
+          lead={selectedLead}
+          employees={employees.filter(emp => emp.role === "EMPLOYEE" && emp.isActive)}
+          onClose={() => {
+            setShowTransferModal(false);
+            setSelectedLead(null);
+          }}
+          onTransfer={handleTransferToEmployee}
+        />
+      )}
+
+      {/* Modal de Atribuição de Tags */}
+      {showTagModal && (
+        <Dialog open={showTagModal} onOpenChange={(open) => {
+          if (!open) {
+            setShowTagModal(false);
+            setSelectedLeadForTags(null);
+          }
+        }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Atribuir Tags - {selectedLeadForTags?.name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Tags Disponíveis</Label>
+                <div className="mt-2 flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 border rounded-md">
+                  {tags.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhuma tag disponível</p>
+                  ) : (
+                    tags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        disabled={assignTagsMutation.isPending}
+                        onClick={() => {
+                          setLeadTags(prev =>
+                            prev.includes(tag.id)
+                              ? prev.filter(id => id !== tag.id)
+                              : [...prev, tag.id]
+                          );
+                        }}
+                        className={`px-3 py-1 rounded-full border text-sm font-medium transition-colors ${leadTags?.includes(tag.id)
+                            ? getTagColor(tag.category)
+                            : "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200"
+                          }`}
+                      >
+                        {tag.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+                {leadTags?.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {leadTags.length} tag(s) selecionada(s)
+                  </p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowTagModal(false)}
+                  disabled={assignTagsMutation.isPending}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleSaveTags}
+                  disabled={leadTags?.length === 0 || assignTagsMutation.isPending}
+                >
+                  {assignTagsMutation.isPending ? "Salvando..." : "Salvar Tags"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
@@ -249,6 +539,25 @@ function LeadFormModal({ lead, onClose }) {
     temperature: lead?.temperature || "COLD",
     status: lead?.status || "NEW",
     notes: lead?.notes || "",
+    tags: lead?.tags?.map(t => t.id) || [],
+  });
+
+  // Reset form when lead changes
+  React.useEffect(() => {
+    setForm({
+      name: lead?.name || "",
+      phone: lead?.phone || "",
+      email: lead?.email || "",
+      temperature: lead?.temperature || "COLD",
+      status: lead?.status || "NEW",
+      notes: lead?.notes || "",
+      tags: lead?.tags?.map(t => t.id) || [],
+    });
+  }, [lead]);
+
+  const { data: tags = [] } = useQuery({
+    queryKey: ["tags"],
+    queryFn: () => tagsApi.list(),
   });
 
   const mutation = useMutation({
@@ -267,6 +576,25 @@ function LeadFormModal({ lead, onClose }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     mutation.mutate(form);
+  };
+
+  const handleTagToggle = (tagId) => {
+    setForm(prev => ({
+      ...prev,
+      tags: prev.tags.includes(tagId)
+        ? prev.tags.filter(id => id !== tagId)
+        : [...prev.tags, tagId]
+    }));
+  };
+
+  const getTagColor = (category) => {
+    const colors = {
+      hot: "bg-red-100 text-red-700 border-red-200",
+      warm: "bg-amber-100 text-amber-700 border-amber-200",
+      cold: "bg-blue-100 text-blue-700 border-blue-200",
+      custom: "bg-purple-100 text-purple-700 border-purple-200",
+    };
+    return colors[category] || colors.custom;
   };
 
   return (
@@ -288,16 +616,26 @@ function LeadFormModal({ lead, onClose }) {
             <Label>Telefone *</Label>
             <Input
               value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              onChange={(e) => {
+                // Remove tudo que não é número
+                const phoneNumbersOnly = e.target.value.replace(/\D/g, '');
+                setForm({ ...form, phone: phoneNumbersOnly });
+              }}
+              placeholder="Digite apenas os números (ex: 11987654321)"
               required
+              maxLength={15}
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              Digite apenas os números do telefone com DDD
+            </p>
           </div>
           <div>
-            <Label>Email</Label>
+            <Label>Email (opcional)</Label>
             <Input
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               type="email"
+              placeholder="email@exemplo.com"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -346,6 +684,38 @@ function LeadFormModal({ lead, onClose }) {
               rows={3}
             />
           </div>
+
+          {/* Tags Section */}
+          <div>
+            <Label className="flex items-center gap-2">
+              <Tag className="w-4 h-4" />
+              Tags de Segmentação
+            </Label>
+            <div className="mt-2 flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+              {tags.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma tag disponível</p>
+              ) : (
+                tags.map((tag) => (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => handleTagToggle(tag.id)}
+                    className={`px-3 py-1 rounded-full border text-sm font-medium transition-colors ${form.tags?.includes(tag.id)
+                      ? getTagColor(tag.category)
+                      : "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200"
+                      }`}
+                  >
+                    {tag.name}
+                  </button>
+                ))
+              )}
+            </div>
+            {form.tags?.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {form.tags.length} tag(s) selecionada(s)
+              </p>
+            )}
+          </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={onClose}>
               Cancelar
@@ -355,6 +725,51 @@ function LeadFormModal({ lead, onClose }) {
             </Button>
           </div>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TransferModal({ lead, employees, onClose, onTransfer }) {
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Transferir Lead</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="p-3 bg-muted rounded-lg">
+            <p className="font-medium">{lead?.name}</p>
+            <p className="text-sm text-muted-foreground">{lead?.phone}</p>
+          </div>
+          <div>
+            <Label>Selecionar Atendente</Label>
+            <div className="mt-2 space-y-2 max-h-60 overflow-y-auto">
+              {employees.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhum atendente disponível</p>
+              ) : (
+                employees.map((employee) => (
+                  <Button
+                    key={employee.id}
+                    variant="outline"
+                    className="w-full justify-start h-12"
+                    onClick={() => onTransfer(employee.id)}
+                  >
+                    <div className="text-left">
+                      <p className="font-medium">{employee.name}</p>
+                      <p className="text-xs text-muted-foreground">{employee.email}</p>
+                    </div>
+                  </Button>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

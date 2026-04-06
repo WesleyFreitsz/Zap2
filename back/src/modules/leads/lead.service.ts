@@ -5,25 +5,49 @@ import { normalizePhone } from "../integrations/evolution/evolution.service";
 
 export class LeadService {
   async create(data: CreateLeadInput, companyId: string) {
-    const phone = normalizePhone(data.phone);
+    // Remove formatação e normaliza
+    let phone = data.phone.replace(/\D/g, "");
+
+    // Se não começar com 55, adiciona (Brasil)
+    if (!phone.startsWith("55") && phone.length <= 11) {
+      phone = `55${phone}`;
+    }
+
+    console.log("🔍 [LEAD] Verificando telefone:", {
+      original: data.phone,
+      normalized: phone,
+      companyId
+    });
 
     const existing = await prisma.lead.findUnique({
       where: { phone_companyId: { phone, companyId } },
     });
+
     if (existing) {
+      console.log("❌ [LEAD] Telefone já existe:", existing.phone);
       throw new AppError("Lead with this phone already exists", 409);
     }
 
-    return prisma.lead.create({
+    // Create lead
+    const lead = await prisma.lead.create({
       data: {
-        ...data,
+        name: data.name,
         phone,
+        email: data.email,
+        temperature: data.temperature,
+        status: data.status,
+        notes: data.notes,
         companyId,
+        assignedToId: data.assignedToId,
       },
       include: {
         assignedTo: { select: { id: true, name: true } },
       },
     });
+
+    console.log("✅ [LEAD] Lead criado:", { id: lead.id, phone: lead.phone });
+
+    return lead;
   }
 
   async findAll(
@@ -37,6 +61,8 @@ export class LeadService {
     userRole?: string,
     userId?: string,
   ) {
+    console.log("🔍 [LEAD] Buscando leads:", { companyId, filters, userRole });
+
     const where: any = { companyId };
 
     if (filters.temperature) where.temperature = filters.temperature;
@@ -56,7 +82,7 @@ export class LeadService {
       ];
     }
 
-    return prisma.lead.findMany({
+    const leads = await prisma.lead.findMany({
       where,
       include: {
         assignedTo: { select: { id: true, name: true } },
@@ -64,6 +90,25 @@ export class LeadService {
       },
       orderBy: { updatedAt: "desc" },
     });
+
+    // Buscar tags para cada lead
+    const leadsWithTags = await Promise.all(
+      leads.map(async (lead) => {
+        const tags = await prisma.$queryRaw`
+          SELECT t.* FROM tags t
+          INNER JOIN lead_tags lt ON t.id = lt."tagId"
+          WHERE lt."leadId" = ${lead.id}
+        `;
+        return { ...lead, tags };
+      })
+    );
+
+    console.log("📋 [LEAD] Leads encontrados:", leadsWithTags.length);
+    leadsWithTags.forEach(lead => {
+      console.log(`  - ${lead.name}: ${lead.phone}`);
+    });
+
+    return leadsWithTags;
   }
 
   async findById(id: string, companyId: string) {
@@ -88,8 +133,35 @@ export class LeadService {
 
     const updateData: any = { ...data };
     if (data.phone) {
-      updateData.phone = normalizePhone(data.phone);
+      // Remove formatação e normaliza
+      let phone = data.phone.replace(/\D/g, "");
+      if (!phone.startsWith("55") && phone.length <= 11) {
+        phone = `55${phone}`;
+      }
+      updateData.phone = phone;
     }
+
+    // Processar tags se enviadas
+    if (data.tags && Array.isArray(data.tags)) {
+      try {
+        // Remover todas as tags existentes usando SQL bruto
+        await prisma.$executeRaw`DELETE FROM lead_tags WHERE "leadId" = ${id}`;
+
+        // Adicionar as novas tags usando SQL bruto
+        if (data.tags.length > 0) {
+          for (const tagId of data.tags) {
+            await prisma.$executeRaw`INSERT INTO lead_tags ("leadId", "tagId") VALUES (${id}, ${tagId})`;
+          }
+        }
+
+        console.log("✅ [LEAD] Tags atualizadas:", data.tags);
+      } catch (error) {
+        console.error("❌ [LEAD] Erro ao salvar tags:", error);
+        throw new AppError("Failed to update lead tags", 500);
+      }
+    }
+
+    console.log("📝 [LEAD] Atualizando lead:", { id, updateData });
 
     return prisma.lead.update({
       where: { id },
@@ -113,7 +185,13 @@ export class LeadService {
     companyId: string,
     name?: string,
   ) {
-    const normalized = normalizePhone(phone);
+    // Remove formatação e normaliza
+    let normalized = phone.replace(/\D/g, "");
+    if (!normalized.startsWith("55") && normalized.length <= 11) {
+      normalized = `55${normalized}`;
+    }
+
+    console.log("🔍 [LEAD] Buscando lead por telefone:", { original: phone, normalized, companyId });
 
     let lead = await prisma.lead.findUnique({
       where: { phone_companyId: { phone: normalized, companyId } },
@@ -129,6 +207,9 @@ export class LeadService {
           status: "NEW",
         },
       });
+      console.log("✅ [LEAD] Lead criado via findOrCreate:", { id: lead.id, phone: lead.phone });
+    } else {
+      console.log("📋 [LEAD] Lead encontrado:", { id: lead.id, phone: lead.phone });
     }
 
     return lead;

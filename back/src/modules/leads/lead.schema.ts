@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const createLeadSchema = z.object({
   name: z.string().min(1),
-  phone: z.string().min(8),
+  phone: z.string().min(10).regex(/^\d+$/, "O telefone deve conter apenas números"),
   email: z.string().email().optional().nullable(),
   temperature: z.enum(["HOT", "WARM", "COLD", "CONVERTED"]).optional(),
   status: z
@@ -10,6 +10,7 @@ export const createLeadSchema = z.object({
     .optional(),
   notes: z.string().optional().nullable(),
   assignedToId: z.string().uuid().optional().nullable(),
+  tags: z.array(z.string().uuid()).optional().default([]),
 });
 
 export const updateLeadSchema = createLeadSchema.partial();

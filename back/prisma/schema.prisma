@@ -257,6 +257,7 @@ model Tag {
 
   company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   conversationTags ConversationTag[]
+  leads            LeadTag[]
 
   createdAt DateTime @default(now())
 
@@ -313,6 +314,7 @@ model Lead {
   company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   assignedTo    User?          @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
   conversations Conversation[]
+  tags          LeadTag[]
 
   @@unique([phone, companyId])
   @@map("leads")
@@ -369,4 +371,16 @@ model Invoice {
   subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
   @@map("invoices")
+}
+
+model LeadTag {
+  id     String @id @default(uuid())
+  leadId String
+  tagId  String
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, tagId])
+  @@map("lead_tags")
 }
