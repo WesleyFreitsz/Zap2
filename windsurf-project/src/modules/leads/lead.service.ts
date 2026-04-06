@@ -1,7 +1,7 @@
 import prisma from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { CreateLeadInput, UpdateLeadInput } from "./lead.schema";
-import { normalizePhone } from "../integrations/evolution/evolution.service";
+import { normalizePhone } from "../../utils/phone";
 
 export class LeadService {
   async create(data: CreateLeadInput, companyId: string) {
@@ -91,13 +91,32 @@ export class LeadService {
       updateData.phone = normalizePhone(data.phone);
     }
 
-    return prisma.lead.update({
+    const updatedLead = await prisma.lead.update({
       where: { id },
       data: updateData,
       include: {
         assignedTo: { select: { id: true, name: true } },
       },
     });
+
+    const conversationUpdateData: Record<string, string> = {};
+
+    if (updateData.name) {
+      conversationUpdateData.contactName = updateData.name;
+    }
+
+    if (updateData.phone) {
+      conversationUpdateData.contactPhone = updateData.phone;
+    }
+
+    if (Object.keys(conversationUpdateData).length > 0) {
+      await prisma.conversation.updateMany({
+        where: { leadId: id, companyId },
+        data: conversationUpdateData,
+      });
+    }
+
+    return updatedLead;
   }
 
   async delete(id: string, companyId: string) {
@@ -112,6 +131,7 @@ export class LeadService {
     phone: string,
     companyId: string,
     name?: string,
+    avatarUrl?: string | null,
   ) {
     const normalized = normalizePhone(phone);
 
@@ -124,10 +144,16 @@ export class LeadService {
         data: {
           name: name || normalized,
           phone: normalized,
+          avatarUrl: avatarUrl || null,
           companyId,
           temperature: "COLD",
           status: "NEW",
         },
+      });
+    } else if (avatarUrl && !lead.avatarUrl) {
+      lead = await prisma.lead.update({
+        where: { id: lead.id },
+        data: { avatarUrl },
       });
     }
 

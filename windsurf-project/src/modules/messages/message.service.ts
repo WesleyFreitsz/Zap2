@@ -1,10 +1,8 @@
 import prisma from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { logger } from "../../utils/logger";
-import { EvolutionService } from "../integrations/evolution/evolution.service";
+import { wppConnectService } from "../integrations/wppconnect/wppconnect.service";
 import { SendMessageInput } from "./message.schema";
-
-const evolutionService = new EvolutionService();
 
 export class MessageService {
   async send(
@@ -23,27 +21,31 @@ export class MessageService {
       throw new AppError("Access denied to this conversation", 403);
     }
 
+    const sender = data.sender || "USER";
     let externalId: string | null = null;
+    const destination =
+      conversation.contactRemoteId || conversation.contactPhone;
 
-    if (conversation.channel === "WHATSAPP" && data.sender !== "CLIENT") {
+    if (conversation.channel === "WHATSAPP" && sender !== "CLIENT") {
       try {
-        const result = await evolutionService.sendMessage(
+        const result = await wppConnectService.sendMessageAuto(
           companyId,
-          conversation.contactPhone,
+          destination,
           data.content,
         );
         externalId = result.externalId;
       } catch (error) {
         logger.error(
-          `[MessageService] Failed to send via Evolution API: ${(error as Error).message}`,
+          `[MessageService] Failed to send via WPPConnect: ${(error as Error).message}`,
         );
+        throw new AppError("Failed to send WhatsApp message", 500);
       }
     }
 
     const message = await prisma.message.create({
       data: {
         conversationId: data.conversationId,
-        sender: data.sender as any,
+        sender: sender as any,
         content: data.content,
         externalId: externalId || undefined,
       },
@@ -55,7 +57,7 @@ export class MessageService {
     });
 
     logger.info(
-      `Message sent in conversation ${data.conversationId} by ${data.sender}${externalId ? ` (ext: ${externalId})` : ""}`,
+      `Message sent in conversation ${data.conversationId} by ${sender}${externalId ? ` (ext: ${externalId})` : ""}`,
     );
 
     return message;
@@ -89,7 +91,7 @@ export class MessageService {
     content: string,
   ): Promise<boolean> {
     try {
-      await evolutionService.sendMessage(companyId, phone, content);
+      await wppConnectService.sendMessageAuto(companyId, phone, content);
       return true;
     } catch (error) {
       logger.error(

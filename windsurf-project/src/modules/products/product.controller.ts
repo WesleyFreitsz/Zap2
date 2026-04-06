@@ -7,6 +7,11 @@ export class ProductController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.user!.companyId!;
+      if (req.file) {
+        const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
+        req.body.image = imageUrl;
+        req.body.imageUrl = imageUrl;
+      }
       const result = await productService.create(req.body, companyId);
       res.status(201).json({ status: "success", data: result });
     } catch (error) {
@@ -48,6 +53,11 @@ export class ProductController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.user!.companyId!;
+      if (req.file) {
+        const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
+        req.body.image = imageUrl;
+        req.body.imageUrl = imageUrl;
+      }
       const result = await productService.update(
         req.params.id as string,
         companyId,
@@ -79,11 +89,12 @@ export class ProductController {
   ): Promise<void> {
     try {
       const companyId = req.user!.companyId!;
-      const { productId, conversationId } = req.body;
+      const { productId, conversationId, customMessage } = req.body;
       const result = await productService.sendToChat(
         productId,
         conversationId,
         companyId,
+        customMessage,
       );
       res.status(201).json({ status: "success", data: result });
     } catch (error) {

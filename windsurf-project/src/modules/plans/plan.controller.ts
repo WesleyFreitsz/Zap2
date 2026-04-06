@@ -1,11 +1,16 @@
 import { Request, Response, NextFunction } from "express";
 import { PlanService } from "./plan.service";
 import { AppError } from "../../utils/AppError";
+import { createPlanSchema, updatePlanSchema } from "./plan.schema";
 
 const planService = new PlanService();
 
 export class PlanController {
-  async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async findAll(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       const onlyActive = req.query.active === "true";
       const plans = await planService.findAll(onlyActive);
@@ -15,7 +20,11 @@ export class PlanController {
     }
   }
 
-  async findBySlug(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async findBySlug(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       const plan = await planService.findBySlug(req.params.slug as string);
       res.json({ status: "success", data: plan });
@@ -26,12 +35,33 @@ export class PlanController {
 
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { name, slug, price, annualPrice, maxNumbers, maxEmployees, maxTeamLeaders, features, founderSlots } = req.body;
+      const {
+        name,
+        slug,
+        price,
+        annualPrice,
+        maxNumbers,
+        maxEmployees,
+        maxTeamLeaders,
+        features,
+        founderSlots,
+      } = createPlanSchema.parse(req.body);
       if (!name || !slug || price == null || annualPrice == null) {
-        throw new AppError("name, slug, price, and annualPrice are required", 400);
+        throw new AppError(
+          "name, slug, price, and annualPrice are required",
+          400,
+        );
       }
       const plan = await planService.create({
-        name, slug, price, annualPrice, maxNumbers, maxEmployees, maxTeamLeaders, features, founderSlots,
+        name,
+        slug,
+        price,
+        annualPrice,
+        maxNumbers,
+        maxEmployees,
+        maxTeamLeaders,
+        features,
+        founderSlots,
       });
       res.status(201).json({ status: "success", data: plan });
     } catch (error) {
@@ -41,7 +71,10 @@ export class PlanController {
 
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const plan = await planService.update(req.params.id as string, req.body);
+      const plan = await planService.update(
+        req.params.id as string,
+        updatePlanSchema.parse(req.body),
+      );
       res.json({ status: "success", data: plan });
     } catch (error) {
       next(error);

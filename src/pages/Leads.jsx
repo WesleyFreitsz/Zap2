@@ -31,6 +31,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { digitsOnly, formatPhoneInput, sanitizePersonName } from "@/lib/utils";
 
 const tempColors = {
   HOT: "bg-red-100 text-red-700 border-red-200",
@@ -163,13 +164,20 @@ export default function Leads() {
           {leads.map((lead) => {
             const TempIcon = tempIcons[lead.temperature] || Snowflake;
             return (
-              <Card key={lead.id} className="p-4 hover:shadow-lg transition-shadow">
+              <Card
+                key={lead.id}
+                className="p-4 hover:shadow-lg transition-shadow"
+              >
                 <div className="flex items-start justify-between mb-2">
                   <div>
                     <p className="font-semibold">{lead.name}</p>
-                    <p className="text-xs text-muted-foreground">{lead.phone}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatPhoneInput(lead.phone)}
+                    </p>
                     {lead.email && (
-                      <p className="text-xs text-muted-foreground">{lead.email}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {lead.email}
+                      </p>
                     )}
                   </div>
                   <Badge
@@ -244,7 +252,7 @@ function LeadFormModal({ lead, onClose }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({
     name: lead?.name || "",
-    phone: lead?.phone || "",
+    phone: formatPhoneInput(lead?.phone || ""),
     email: lead?.email || "",
     temperature: lead?.temperature || "COLD",
     status: lead?.status || "NEW",
@@ -266,7 +274,24 @@ function LeadFormModal({ lead, onClose }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    mutation.mutate(form);
+
+    if (!form.name.trim()) {
+      toast.error("Informe um nome válido");
+      return;
+    }
+
+    if (digitsOnly(form.phone).length < 8) {
+      toast.error("Informe um telefone válido");
+      return;
+    }
+
+    mutation.mutate({
+      ...form,
+      name: form.name.trim(),
+      phone: digitsOnly(form.phone),
+      email: form.email.trim() || null,
+      notes: form.notes?.trim() || null,
+    });
   };
 
   return (
@@ -280,7 +305,10 @@ function LeadFormModal({ lead, onClose }) {
             <Label>Nome *</Label>
             <Input
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, name: sanitizePersonName(e.target.value) })
+              }
+              autoComplete="name"
               required
             />
           </div>
@@ -288,7 +316,12 @@ function LeadFormModal({ lead, onClose }) {
             <Label>Telefone *</Label>
             <Input
               value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, phone: formatPhoneInput(e.target.value) })
+              }
+              inputMode="tel"
+              maxLength={16}
+              placeholder="(11) 99999-9999"
               required
             />
           </div>
@@ -351,7 +384,11 @@ function LeadFormModal({ lead, onClose }) {
               Cancelar
             </Button>
             <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? "Salvando..." : lead ? "Atualizar" : "Criar"}
+              {mutation.isPending
+                ? "Salvando..."
+                : lead
+                  ? "Atualizar"
+                  : "Criar"}
             </Button>
           </div>
         </form>

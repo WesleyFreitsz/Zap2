@@ -6,7 +6,7 @@ import { Pencil, Trash2, Package, Tag } from "lucide-react";
 
 export default function ProductCard({ product, onEdit, onDelete }) {
   const hasPromo =
-    product.promotional_price && product.promotional_price < product.price;
+    product.promotionalPrice && product.promotionalPrice < product.price;
 
   return (
     <Card
@@ -14,9 +14,9 @@ export default function ProductCard({ product, onEdit, onDelete }) {
     >
       {/* Image */}
       <div className="h-36 bg-muted flex items-center justify-center relative overflow-hidden">
-        {product.image_url ? (
+        {product.imageUrl || product.image ? (
           <img
-            src={product.image_url}
+            src={product.imageUrl || product.image}
             alt={product.name}
             className="w-full h-full object-cover"
           />
@@ -60,7 +60,7 @@ export default function ProductCard({ product, onEdit, onDelete }) {
           {hasPromo ? (
             <>
               <span className="text-base font-bold text-primary">
-                R$ {product.promotional_price?.toFixed(2).replace(".", ",")}
+                R$ {product.promotionalPrice?.toFixed(2).replace(".", ",")}
               </span>
               <span className="text-xs text-muted-foreground line-through">
                 R$ {product.price?.toFixed(2).replace(".", ",")}

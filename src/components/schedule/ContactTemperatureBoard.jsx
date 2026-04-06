@@ -1,46 +1,82 @@
-import React from "react";
-import { useQuery } from "@tanstack/react-query";
-import { conversationsApi } from "@/api/apiClient";
+import React, { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { leadsApi } from "@/api/apiClient";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Flame, Snowflake, Thermometer } from "lucide-react";
+import { toast } from "sonner";
 
 const tempConfig = {
   hot: {
+    apiValue: "HOT",
     label: "Hot",
     icon: Flame,
-    bg: "bg-red-50",
-    border: "border-red-200",
+    bg: "bg-red-500/5 dark:bg-red-500/10",
+    border: "border-red-500/20",
     header: "bg-red-500",
   },
   warm: {
+    apiValue: "WARM",
     label: "Warm",
     icon: Thermometer,
-    bg: "bg-amber-50",
-    border: "border-amber-200",
+    bg: "bg-amber-500/5 dark:bg-amber-500/10",
+    border: "border-amber-500/20",
     header: "bg-amber-500",
   },
   cold: {
+    apiValue: "COLD",
     label: "Cold",
     icon: Snowflake,
-    bg: "bg-blue-50",
-    border: "border-blue-200",
+    bg: "bg-blue-500/5 dark:bg-blue-500/10",
+    border: "border-blue-500/20",
     header: "bg-blue-500",
   },
 };
 
-const statusLabels = { OPEN: "Aberta", CLOSED: "Fechada", PENDING: "Pendente" };
+const statusLabels = {
+  NEW: "Novo",
+  IN_ATTENDANCE: "Em atendimento",
+  WAITING: "Aguardando",
+  FOLLOW_UP: "Follow-up",
+  CLOSED: "Fechado",
+  LOST: "Perdido",
+};
 
 export default function ContactTemperatureBoard() {
-  const { data: conversations = [], isLoading } = useQuery({
-    queryKey: ["conversations"],
-    queryFn: () => conversationsApi.list(),
+  const queryClient = useQueryClient();
+  const [draggingLeadId, setDraggingLeadId] = useState(null);
+
+  const { data: leads = [], isLoading } = useQuery({
+    queryKey: ["leads", "temperature-board"],
+    queryFn: () => leadsApi.list(),
   });
 
-  const grouped = {
-    hot: conversations.filter((c) => c.status === "OPEN" && c.isAutoMode),
-    warm: conversations.filter((c) => c.status === "OPEN" && !c.isAutoMode),
-    cold: conversations.filter((c) => c.status !== "OPEN"),
+  const updateTemperatureMutation = useMutation({
+    mutationFn: ({ id, temperature }) => leadsApi.update(id, { temperature }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      toast.success("Temperatura do lead atualizada.");
+    },
+    onError: (error) => {
+      toast.error(
+        error.response?.data?.message ||
+          "Erro ao atualizar temperatura do lead",
+      );
+    },
+  });
+
+  const grouped = useMemo(
+    () => ({
+      hot: leads.filter((lead) => lead.temperature === "HOT"),
+      warm: leads.filter((lead) => lead.temperature === "WARM"),
+      cold: leads.filter((lead) => lead.temperature === "COLD"),
+    }),
+    [leads],
+  );
+
+  const handleDrop = (lead, temperature) => {
+    if (!lead || lead.temperature === temperature) return;
+    updateTemperatureMutation.mutate({ id: lead.id, temperature });
   };
 
   if (isLoading)
@@ -61,6 +97,7 @@ export default function ContactTemperatureBoard() {
           <div
             key={temp}
             className={`rounded-xl border ${cfg.border} ${cfg.bg} overflow-hidden`}
+            onDragOver={(event) => event.preventDefault()}
           >
             <div
               className={`${cfg.header} px-4 py-3 flex items-center justify-between`}
@@ -73,29 +110,37 @@ export default function ContactTemperatureBoard() {
                 {list.length}
               </span>
             </div>
-            <div className="p-3 space-y-2 min-h-[200px]">
+            <div
+              className="p-3 space-y-2 min-h-[200px]"
+              onDrop={() => {
+                const lead = leads.find((item) => item.id === draggingLeadId);
+                handleDrop(lead, cfg.apiValue);
+                setDraggingLeadId(null);
+              }}
+            >
               {list.length === 0 && (
                 <p className="text-xs text-center text-muted-foreground py-8">
                   Nenhum contato aqui
                 </p>
               )}
-              {list.map((conv) => (
+              {list.map((lead) => (
                 <Card
-                  key={conv.id}
-                  className="p-3 bg-white shadow-sm hover:shadow-md transition-shadow"
+                  key={lead.id}
+                  draggable
+                  onDragStart={() => setDraggingLeadId(lead.id)}
+                  onDragEnd={() => setDraggingLeadId(null)}
+                  className={`p-3 bg-card shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing ${draggingLeadId === lead.id ? "opacity-60" : ""}`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-semibold text-primary text-xs shrink-0">
-                      {(conv.contactName || conv.contactPhone)
-                        ?.charAt(0)
-                        ?.toUpperCase()}
+                      {(lead.name || lead.phone)?.charAt(0)?.toUpperCase()}
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold truncate">
-                        {conv.contactName || conv.contactPhone}
+                        {lead.name || lead.phone}
                       </p>
                       <p className="text-[11px] text-muted-foreground truncate">
-                        {conv.contactPhone}
+                        {lead.phone}
                       </p>
                     </div>
                   </div>
@@ -104,14 +149,14 @@ export default function ContactTemperatureBoard() {
                       variant="outline"
                       className="text-[10px] px-1.5 py-0"
                     >
-                      {statusLabels[conv.status] || conv.status}
+                      {statusLabels[lead.status] || lead.status}
                     </Badge>
-                    {conv.isAutoMode && (
+                    {lead.assignedTo?.name && (
                       <Badge
                         variant="outline"
-                        className="text-[10px] px-1.5 py-0 bg-accent"
+                        className="text-[10px] px-1.5 py-0"
                       >
-                        IA Auto
+                        {lead.assignedTo.name}
                       </Badge>
                     )}
                   </div>

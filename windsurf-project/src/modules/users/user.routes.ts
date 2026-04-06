@@ -4,7 +4,7 @@ import { authMiddleware } from "../../middlewares/auth";
 import { authorize } from "../../middlewares/authorize";
 import { subscriptionGuard } from "../../middlewares/subscription";
 import { validate } from "../../middlewares/validate";
-import { createUserSchema } from "./user.schema";
+import { createUserSchema, updateProfileSchema } from "./user.schema";
 
 const router = Router();
 const controller = new UserController();
@@ -13,6 +13,7 @@ router.use(authMiddleware);
 
 // Any authenticated user
 router.get("/profile", controller.getProfile);
+router.put("/profile", validate(updateProfileSchema), controller.updateProfile);
 router.post("/change-password", controller.changePassword);
 
 // Admin-only user management (needs subscription)

@@ -1,8 +1,9 @@
 import React from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
+import { Loader2, Search, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
@@ -20,10 +21,14 @@ export default function ContactList({
   onSelect,
   searchTerm,
   onSearchChange,
+  isAdmin,
+  onAddLead,
+  creatingLeadConversationId,
 }) {
   const filtered = conversations.filter(
     (c) =>
-      c.contactName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.displayPhone?.includes(searchTerm) ||
       c.contactPhone?.includes(searchTerm),
   );
 
@@ -60,13 +65,13 @@ export default function ContactList({
           >
             <Avatar className="h-11 w-11 shrink-0">
               <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                {conv.contactName?.charAt(0)?.toUpperCase()}
+                {conv.displayName?.charAt(0)?.toUpperCase() || "?"}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold truncate">
-                  {conv.contactName}
+                  {conv.displayName}
                 </p>
                 {conv.updatedAt && (
                   <span className="text-[10px] text-muted-foreground shrink-0">
@@ -74,13 +79,53 @@ export default function ContactList({
                   </span>
                 )}
               </div>
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-xs text-muted-foreground truncate">
-                  {conv.contactPhone}
-                </span>
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                  {statusLabels[conv.status] || conv.status}
-                </Badge>
+              <div className="mt-1 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground truncate">
+                    {conv.displayPhone || conv.contactPhone}
+                  </span>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                    {statusLabels[conv.status] || conv.status}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1 flex-wrap min-w-0">
+                    {isAdmin && conv.assignedTo?.name && (
+                      <span className="text-[10px] text-muted-foreground truncate">
+                        Responsável: {conv.assignedTo.name}
+                      </span>
+                    )}
+                    {conv.leadId ? (
+                      <Badge
+                        variant="secondary"
+                        className="text-[10px] px-1.5 py-0"
+                      >
+                        Lead vinculado
+                      </Badge>
+                    ) : null}
+                  </div>
+                  {!conv.leadId &&
+                    onAddLead &&
+                    !String(conv.contactPhone || "").includes("broadcast") && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-[10px] gap-1"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onAddLead(conv);
+                        }}
+                        disabled={creatingLeadConversationId === conv.id}
+                      >
+                        {creatingLeadConversationId === conv.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <UserPlus className="w-3 h-3" />
+                        )}
+                        Adicionar lead
+                      </Button>
+                    )}
+                </div>
               </div>
             </div>
           </div>

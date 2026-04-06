@@ -4,6 +4,7 @@ import { usersApi, invitationsApi } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { X, Mail } from "lucide-react";
 import { toast } from "sonner";
+import { sanitizePersonName } from "@/lib/utils";
 
 export default function EmployeeFormModal({ employee, onClose }) {
   const qc = useQueryClient();
@@ -23,6 +25,7 @@ export default function EmployeeFormModal({ employee, onClose }) {
     email: employee?.email || "",
     password: "",
     role: employee?.role || "EMPLOYEE",
+    isTeamLeader: employee?.isTeamLeader || false,
   });
 
   // Edit existing user
@@ -48,6 +51,7 @@ export default function EmployeeFormModal({ employee, onClose }) {
       invitationsApi.send({
         email: data.email,
         invitationRole: data.role,
+        isTeamLeader: data.role === "EMPLOYEE" ? data.isTeamLeader : false,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["employees"] });
@@ -90,8 +94,12 @@ export default function EmployeeFormModal({ employee, onClose }) {
                   placeholder="Nome completo"
                   value={form.name}
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, name: e.target.value }))
+                    setForm((f) => ({
+                      ...f,
+                      name: sanitizePersonName(e.target.value),
+                    }))
                   }
+                  autoComplete="name"
                   required
                 />
               </div>
@@ -126,7 +134,13 @@ export default function EmployeeFormModal({ employee, onClose }) {
               <Label>Cargo</Label>
               <Select
                 value={form.role}
-                onValueChange={(v) => setForm((f) => ({ ...f, role: v }))}
+                onValueChange={(v) =>
+                  setForm((f) => ({
+                    ...f,
+                    role: v,
+                    isTeamLeader: v === "EMPLOYEE" ? f.isTeamLeader : false,
+                  }))
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -137,6 +151,24 @@ export default function EmployeeFormModal({ employee, onClose }) {
                 </SelectContent>
               </Select>
             </div>
+            {form.role === "EMPLOYEE" && (
+              <div className="space-y-2 col-span-2">
+                <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                  <div>
+                    <Label>Líder de equipe</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Conta para o limite de líderes do plano.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.isTeamLeader}
+                    onCheckedChange={(checked) =>
+                      setForm((f) => ({ ...f, isTeamLeader: checked }))
+                    }
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

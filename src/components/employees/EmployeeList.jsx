@@ -100,12 +100,19 @@ export default function EmployeeList() {
                     </div>
                     <div>
                       <p className="font-semibold text-sm">{emp.name}</p>
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] mt-0.5 ${roleColors[emp.role] || "bg-muted text-muted-foreground"}`}
-                      >
-                        {roleLabels[emp.role] || emp.role}
-                      </Badge>
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] ${roleColors[emp.role] || "bg-muted text-muted-foreground"}`}
+                        >
+                          {roleLabels[emp.role] || emp.role}
+                        </Badge>
+                        {emp.isTeamLeader && emp.role === "EMPLOYEE" && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            Líder de equipe
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <Badge

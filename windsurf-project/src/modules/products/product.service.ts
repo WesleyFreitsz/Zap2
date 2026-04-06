@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import prisma from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { CreateProductInput, UpdateProductInput } from "./product.schema";
@@ -5,7 +6,7 @@ import { CreateProductInput, UpdateProductInput } from "./product.schema";
 export class ProductService {
   async create(data: CreateProductInput, companyId: string) {
     return prisma.product.create({
-      data: { ...data, companyId },
+      data: this.mapCreateProductData(data, companyId),
     });
   }
 
@@ -30,7 +31,10 @@ export class ProductService {
     });
     if (!product) throw new AppError("Product not found", 404);
 
-    return prisma.product.update({ where: { id }, data });
+    return prisma.product.update({
+      where: { id },
+      data: this.mapUpdateProductData(data),
+    });
   }
 
   async delete(id: string, companyId: string) {
@@ -59,8 +63,8 @@ export class ProductService {
     });
     if (!conversation) throw new AppError("Conversation not found", 404);
 
-    const imageUrl = (product as any).imageUrl || product.image;
-    const promoPrice = (product as any).promotionalPrice;
+    const imageUrl = product.imageUrl || product.image;
+    const promoPrice = product.promotionalPrice;
     const displayPrice =
       promoPrice && promoPrice < product.price ? promoPrice : product.price;
 
@@ -68,33 +72,29 @@ export class ProductService {
       customMessage ||
       `📦 *${product.name}*\n${product.description || ""}\n💰 R$ ${displayPrice.toFixed(2)}`;
 
-    const { EvolutionService } =
-      await import("../integrations/evolution/evolution.service");
-    const evolutionService = new EvolutionService();
+    const { wppConnectService } =
+      await import("../integrations/wppconnect/wppconnect.service");
+    const destination =
+      conversation.contactRemoteId || conversation.contactPhone;
 
-    // Send product image via WhatsApp if available
-    if (imageUrl && conversation.contactPhone) {
+    if (imageUrl && destination) {
       try {
-        await evolutionService.sendMedia(companyId, {
-          number: conversation.contactPhone,
+        await wppConnectService.sendMediaAuto(companyId, {
+          number: destination,
           type: "image",
           url: imageUrl,
           caption: content,
         });
       } catch {
         // If media fails, fall back to text
-        await evolutionService.sendMessage(
+        await wppConnectService.sendMessageAuto(
           companyId,
-          conversation.contactPhone,
+          destination,
           content,
         );
       }
-    } else if (conversation.contactPhone) {
-      await evolutionService.sendMessage(
-        companyId,
-        conversation.contactPhone,
-        content,
-      );
+    } else if (destination) {
+      await wppConnectService.sendMessageAuto(companyId, destination, content);
     }
 
     const message = await prisma.message.create({
@@ -105,6 +105,58 @@ export class ProductService {
       },
     });
 
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { updatedAt: new Date() },
+    });
+
     return message;
+  }
+
+  private mapCreateProductData(
+    data: CreateProductInput,
+    companyId: string,
+  ): Prisma.ProductUncheckedCreateInput {
+    return {
+      name: data.name,
+      code: data.code || null,
+      description: data.description || null,
+      price: data.price,
+      image: data.image || null,
+      imageUrl: data.imageUrl || data.image || null,
+      category: data.category || null,
+      promotionalPrice: data.promotionalPrice ?? null,
+      stock: data.stock ?? 0,
+      active: data.active ?? true,
+      whatsappMessage: data.whatsappMessage || null,
+      companyId,
+    };
+  }
+
+  private mapUpdateProductData(
+    data: UpdateProductInput,
+  ): Prisma.ProductUncheckedUpdateInput {
+    const mapped: Prisma.ProductUncheckedUpdateInput = {};
+
+    if (data.name !== undefined) mapped.name = data.name;
+    if (data.code !== undefined) mapped.code = data.code || null;
+    if (data.description !== undefined)
+      mapped.description = data.description || null;
+    if (data.price !== undefined) mapped.price = data.price;
+    if (data.image !== undefined) mapped.image = data.image || null;
+    if (data.imageUrl !== undefined)
+      mapped.imageUrl = data.imageUrl || data.image || null;
+    else if (data.image !== undefined) {
+      mapped.imageUrl = data.image || null;
+    }
+    if (data.category !== undefined) mapped.category = data.category || null;
+    if (data.promotionalPrice !== undefined)
+      mapped.promotionalPrice = data.promotionalPrice ?? null;
+    if (data.stock !== undefined) mapped.stock = data.stock;
+    if (data.active !== undefined) mapped.active = data.active;
+    if (data.whatsappMessage !== undefined)
+      mapped.whatsappMessage = data.whatsappMessage || null;
+
+    return mapped;
   }
 }

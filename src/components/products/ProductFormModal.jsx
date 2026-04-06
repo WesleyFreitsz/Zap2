@@ -7,43 +7,72 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { X } from "lucide-react";
+import { toast } from "sonner";
 
 export default function ProductFormModal({ product, onClose }) {
   const qc = useQueryClient();
   const isEdit = !!product;
+  const initialImage = product?.imageUrl || product?.image || "";
 
   const [form, setForm] = useState({
     name: product?.name || "",
     code: product?.code || "",
     description: product?.description || "",
     price: product?.price || "",
-    promotional_price: product?.promotional_price || "",
+    promotionalPrice: product?.promotionalPrice || "",
     category: product?.category || "",
-    image_url: product?.image_url || "",
+    imageUrl: initialImage,
+    imageFile: null,
+    imagePreview: initialImage,
     stock: product?.stock ?? 0,
     active: product?.active ?? true,
-    whatsapp_message: product?.whatsapp_message || "",
+    whatsappMessage: product?.whatsappMessage || "",
   });
 
   const saveMutation = useMutation({
     mutationFn: (data) =>
-      isEdit ? productsApi.update(product.id, data) : productsApi.create(data),
+      isEdit
+        ? productsApi.update(product.id, buildPayload(data))
+        : productsApi.create(buildPayload(data)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["products"] });
       onClose();
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || "Erro ao salvar produto");
     },
   });
 
   const f = (val) => setForm((prev) => ({ ...prev, ...val }));
 
+  const buildPayload = (data) => {
+    const payload = new FormData();
+    payload.append("name", data.name);
+    if (data.code) payload.append("code", data.code);
+    if (data.description) payload.append("description", data.description);
+    payload.append("price", String(data.price));
+    if (data.promotionalPrice !== "") {
+      payload.append("promotionalPrice", String(data.promotionalPrice));
+    }
+    if (data.category) payload.append("category", data.category);
+    if (data.imageUrl) payload.append("imageUrl", data.imageUrl);
+    if (data.imageFile) payload.append("imageFile", data.imageFile);
+    payload.append("stock", String(data.stock ?? 0));
+    payload.append("active", String(Boolean(data.active)));
+    if (data.whatsappMessage) {
+      payload.append("whatsappMessage", data.whatsappMessage);
+    }
+    return payload;
+  };
+
   // Auto-generate WhatsApp message when name/price changes
   const generateMessage = () => {
-    const price = form.promotional_price || form.price;
+    const price = form.promotionalPrice || form.price;
     const priceStr = price
       ? `R$ ${parseFloat(price).toFixed(2).replace(".", ",")}`
       : "";
     const msg = `🛍️ *${form.name}*\n${form.description ? form.description + "\n" : ""}${form.code ? `Cód: #${form.code}\n` : ""}💰 ${priceStr}\n\nDeseja fazer seu pedido? 😊`;
-    f({ whatsapp_message: msg });
+    f({ whatsappMessage: msg });
   };
 
   return (
@@ -104,9 +133,9 @@ export default function ProductFormModal({ product, onClose }) {
                 step="0.01"
                 min="0"
                 placeholder="0,00"
-                value={form.promotional_price}
+                value={form.promotionalPrice}
                 onChange={(e) =>
-                  f({ promotional_price: parseFloat(e.target.value) || "" })
+                  f({ promotionalPrice: parseFloat(e.target.value) || "" })
                 }
               />
             </div>
@@ -123,9 +152,36 @@ export default function ProductFormModal({ product, onClose }) {
               <Label>URL da Imagem</Label>
               <Input
                 placeholder="https://..."
-                value={form.image_url}
-                onChange={(e) => f({ image_url: e.target.value })}
+                value={form.imageUrl}
+                onChange={(e) =>
+                  f({ imageUrl: e.target.value, imagePreview: e.target.value })
+                }
               />
+            </div>
+            <div className="space-y-1 col-span-2">
+              <Label>Upload da Imagem</Label>
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  f({
+                    imageFile: file,
+                    imagePreview: file
+                      ? URL.createObjectURL(file)
+                      : form.imageUrl,
+                  });
+                }}
+              />
+              {form.imagePreview && (
+                <div className="mt-2 rounded-lg border overflow-hidden bg-muted w-28 h-28">
+                  <img
+                    src={form.imagePreview}
+                    alt="Pré-visualização"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -154,8 +210,8 @@ export default function ProductFormModal({ product, onClose }) {
             </div>
             <Textarea
               placeholder="Mensagem que será enviada no WhatsApp ao compartilhar o produto..."
-              value={form.whatsapp_message}
-              onChange={(e) => f({ whatsapp_message: e.target.value })}
+              value={form.whatsappMessage}
+              onChange={(e) => f({ whatsappMessage: e.target.value })}
               className="min-h-[90px] text-sm"
             />
           </div>

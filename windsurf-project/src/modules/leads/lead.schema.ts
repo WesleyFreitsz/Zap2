@@ -1,8 +1,18 @@
 import { z } from "zod";
 
+const leadNameSchema = z
+  .string()
+  .min(2)
+  .regex(/^[A-Za-zÀ-ÿ\s'’-]+$/, "Name must contain only letters");
+
+const leadPhoneSchema = z
+  .string()
+  .transform((value) => value.replace(/\D/g, ""))
+  .refine((value) => value.length >= 8, "Phone must contain at least 8 digits");
+
 export const createLeadSchema = z.object({
-  name: z.string().min(1),
-  phone: z.string().min(8),
+  name: leadNameSchema,
+  phone: leadPhoneSchema,
   email: z.string().email().optional().nullable(),
   temperature: z.enum(["HOT", "WARM", "COLD", "CONVERTED"]).optional(),
   status: z
