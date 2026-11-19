@@ -1,28 +1,11 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { leadsApi, usersApi, conversationsApi, tagsApi } from "@/api/apiClient";
+import { leadsApi, conversationsApi } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Search,
   Plus,
   Download,
   Pencil,
@@ -32,15 +15,13 @@ import {
   ThermometerSun,
   CheckCircle2,
   MessageSquare,
-  UserCheck,
-  Tag,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../lib/AuthContext";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import ChannelIcon, { channelLabels } from "@/components/channels/ChannelIcon";
 import LeadFormModal from "@/components/leads/LeadFormModal";
-import { digitsOnly, formatPhoneInput, sanitizePersonName } from "@/lib/utils";
+import { formatPhoneInput } from "@/lib/utils";
 
 const getTagColor = (category) => {
   const colors = {
@@ -86,12 +67,7 @@ export default function Leads() {
   const [search, setSearch] = useState("");
   const [tempFilter, setTempFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [showTagModal, setShowTagModal] = useState(false);
-  const [selectedLeadForTags, setSelectedLeadForTags] = useState(null);
-  const [leadTags, setLeadTags] = useState([]);
   const [showModal, setShowModal] = useState(false);
-  const [showTransferModal, setShowTransferModal] = useState(false);
-  const [selectedLead, setSelectedLead] = useState(null);
   const [editing, setEditing] = useState(null);
 
   const qc = useQueryClient();
@@ -105,17 +81,6 @@ export default function Leads() {
   const { data: leads = [], isLoading } = useQuery({
     queryKey: ["leads", params],
     queryFn: () => leadsApi.list(params),
-  });
-
-  const { data: employees = [] } = useQuery({
-    queryKey: ["employees"],
-    queryFn: () => usersApi.list(),
-    enabled: showTransferModal,
-  });
-
-  const { data: tags = [] } = useQuery({
-    queryKey: ["tags"],
-    queryFn: () => tagsApi.list(),
   });
 
   const deleteMutation = useMutation({
@@ -225,6 +190,12 @@ export default function Leads() {
                   {tempLabels[lead.temperature]}
                 </Badge>
 
+                {lead.assignedTo?.name && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Responsável: {lead.assignedTo.name}
+                  </p>
+                )}
+
                 {/* TAGS */}
                 <div className="flex gap-1 mt-2 flex-wrap">
                   {lead.tags?.map((tag) => (
@@ -282,6 +253,7 @@ export default function Leads() {
       {showModal && (
         <LeadFormModal
           lead={editing}
+          isAdmin={isAdmin}
           tempLabels={tempLabels}
           statusLabels={statusLabels}
           onClose={() => {

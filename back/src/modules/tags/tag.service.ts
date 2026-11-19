@@ -1,3 +1,4 @@
+import { assertConversationAccess, type Actor } from '../conversations/conversation-access';
 import prisma from '../../config/prisma';
 import { AppError } from '../../utils/AppError';
 import { CreateTagInput } from './tag.schema';
@@ -42,11 +43,12 @@ export class TagService {
     return { message: 'Tag deleted successfully' };
   }
 
-  async assignToConversation(conversationId: string, tagId: string, companyId: string) {
+  async assignToConversation(conversationId: string, tagId: string, companyId: string, actor: Actor) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
     });
     if (!conversation) throw new AppError('Conversation not found', 404);
+    assertConversationAccess(conversation, actor);
 
     const tag = await prisma.tag.findFirst({ where: { id: tagId, companyId } });
     if (!tag) throw new AppError('Tag not found', 404);
@@ -61,11 +63,12 @@ export class TagService {
     });
   }
 
-  async removeFromConversation(conversationId: string, tagId: string, companyId: string) {
+  async removeFromConversation(conversationId: string, tagId: string, companyId: string, actor: Actor) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
     });
     if (!conversation) throw new AppError('Conversation not found', 404);
+    assertConversationAccess(conversation, actor);
 
     const ct = await prisma.conversationTag.findFirst({
       where: { conversationId, tagId },
@@ -76,11 +79,12 @@ export class TagService {
     return { message: 'Tag removed from conversation' };
   }
 
-  async getConversationTags(conversationId: string, companyId: string) {
+  async getConversationTags(conversationId: string, companyId: string, actor: Actor) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
     });
     if (!conversation) throw new AppError('Conversation not found', 404);
+    assertConversationAccess(conversation, actor);
 
     return prisma.conversationTag.findMany({
       where: { conversationId },

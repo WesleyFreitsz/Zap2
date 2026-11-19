@@ -1,27 +1,60 @@
-import type { Conversation } from "@prisma/client";
+import type { Conversation, Prisma } from "@prisma/client";
 import prisma from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
+import type { Actor } from "../conversations/conversation-access";
 import { CreateLeadInput, UpdateLeadInput } from "./lead.schema";
 import { normalizePhone } from "../../utils/phone";
 
-export class LeadService {
-  async create(data: CreateLeadInput, companyId: string) {
-    const phone = normalizePhone(data.phone);
+const leadInclude = {
+  assignedTo: { select: { id: true, name: true } },
+  tags: { include: { tag: true } },
+} satisfies Prisma.LeadInclude;
 
-    console.log("🔍 [LEAD] Verificando telefone:", {
-      original: data.phone,
-      normalized: phone,
-      companyId,
-    });
+type LeadWithTags = Prisma.LeadGetPayload<{ include: typeof leadInclude }>;
+
+function toLeadResponse<T extends Pick<LeadWithTags, "tags">>({ tags, ...lead }: T) {
+  return { ...lead, tags: tags.map(({ tag }) => tag) };
+}
+
+function leadScope(actor: Actor): Prisma.LeadWhereInput {
+  return actor.role === "EMPLOYEE" ? { assignedToId: actor.userId } : {};
+}
+
+async function assertTagsBelongToCompany(tagIds: string[], companyId: string) {
+  const unique = [...new Set(tagIds)];
+  const found = await prisma.tag.count({ where: { id: { in: unique }, companyId } });
+  if (found !== unique.length) throw new AppError("Tag inválida para esta empresa", 422);
+  return unique;
+}
+
+async function resolveAssignee(
+  assignedToId: string | null | undefined,
+  companyId: string,
+  actor: Actor,
+): Promise<string | null | undefined> {
+  if (actor.role === "EMPLOYEE") return undefined;
+  if (!assignedToId) return assignedToId;
+  const user = await prisma.user.findFirst({
+    where: { id: assignedToId, companyId, isActive: true },
+    select: { id: true },
+  });
+  if (!user) throw new AppError("Responsável inválido para esta empresa", 422);
+  return user.id;
+}
+
+export class LeadService {
+  async create(data: CreateLeadInput, companyId: string, actor: Actor) {
+    const phone = normalizePhone(data.phone);
 
     const existing = await prisma.lead.findUnique({
       where: { phone_companyId: { phone, companyId } },
     });
+    if (existing) throw new AppError("Lead com este telefone já existe", 409);
 
-    if (existing) {
-      console.log("❌ [LEAD] Telefone já existe:", existing.phone);
-      throw new AppError("Lead com este telefone já existe", 409);
-    }
+    const tagIds = await assertTagsBelongToCompany(data.tags ?? [], companyId);
+    const assignedToId = actor.role === "EMPLOYEE"
+      ? actor.userId
+      : await resolveAssignee(data.assignedToId, companyId, actor);
 
     const lead = await prisma.lead.create({
       data: {
@@ -32,25 +65,13 @@ export class LeadService {
         status: data.status,
         notes: data.notes,
         companyId,
-        assignedToId: data.assignedToId,
-        tags: data.tags
-          ? {
-              connect: data.tags.map((id) => ({ id })),
-            }
-          : undefined,
+        assignedToId,
+        tags: { create: tagIds.map((tagId) => ({ tagId })) },
       },
-      include: {
-        assignedTo: { select: { id: true, name: true } },
-        tags: true,
-      },
+      include: leadInclude,
     });
 
-    console.log("✅ [LEAD] Lead criado:", {
-      id: lead.id,
-      phone: lead.phone,
-    });
-
-    return lead;
+    return toLeadResponse(lead);
   }
 
   async findAll(
@@ -84,25 +105,18 @@ export class LeadService {
 
     const leads = await prisma.lead.findMany({
       where,
-      include: {
-        assignedTo: { select: { id: true, name: true } },
-        tags: true, // 👈 substitui SQL bruto
-        _count: { select: { conversations: true } },
-      },
+      include: { ...leadInclude, _count: { select: { conversations: true } } },
       orderBy: { updatedAt: "desc" },
     });
 
-    console.log("📋 [LEAD] Leads encontrados:", leads.length);
-
-    return leads;
+    return leads.map(toLeadResponse);
   }
 
-  async findById(id: string, companyId: string) {
+  async findById(id: string, companyId: string, actor: Actor) {
     const lead = await prisma.lead.findFirst({
-      where: { id, companyId },
+      where: { id, companyId, ...leadScope(actor) },
       include: {
-        assignedTo: { select: { id: true, name: true } },
-        tags: true,
+        ...leadInclude,
         conversations: {
           orderBy: { updatedAt: "desc" },
           take: 5,
@@ -113,46 +127,40 @@ export class LeadService {
 
     if (!lead) throw new AppError("Lead not found", 404);
 
-    return lead;
+    return toLeadResponse(lead);
   }
 
-  async update(id: string, companyId: string, data: UpdateLeadInput) {
+  async update(id: string, companyId: string, data: UpdateLeadInput, actor: Actor) {
     const lead = await prisma.lead.findFirst({
-      where: { id, companyId },
+      where: { id, companyId, ...leadScope(actor) },
     });
 
     if (!lead) throw new AppError("Lead not found", 404);
 
-    const updateData: any = { ...data };
+    const { tags, assignedToId, phone, ...fields } = data;
+    const updateData: Prisma.LeadUncheckedUpdateInput = { ...fields };
 
-    if (data.phone) {
-      updateData.phone = normalizePhone(data.phone);
+    if (phone) updateData.phone = normalizePhone(phone);
+
+    if (assignedToId !== undefined) {
+      const resolved = await resolveAssignee(assignedToId, companyId, actor);
+      if (resolved !== undefined) updateData.assignedToId = resolved;
     }
 
-    if (data.tags) {
-      updateData.tags = {
-        set: data.tags.map((id) => ({ id })), // 👈 limpa + recria
-      };
+    if (tags) {
+      const tagIds = await assertTagsBelongToCompany(tags, companyId);
+      updateData.tags = { deleteMany: {}, create: tagIds.map((tagId) => ({ tagId })) };
     }
 
     const updatedLead = await prisma.lead.update({
       where: { id },
       data: updateData,
-      include: {
-        assignedTo: { select: { id: true, name: true } },
-        tags: true,
-      },
+      include: leadInclude,
     });
 
-    const conversationUpdateData: Record<string, string> = {};
-
-    if (updateData.name) {
-      conversationUpdateData.contactName = updateData.name;
-    }
-
-    if (updateData.phone) {
-      conversationUpdateData.contactPhone = updateData.phone;
-    }
+    const conversationUpdateData: Prisma.ConversationUpdateManyMutationInput = {};
+    if (fields.name) conversationUpdateData.contactName = fields.name;
+    if (typeof updateData.phone === "string") conversationUpdateData.contactPhone = updateData.phone;
 
     if (Object.keys(conversationUpdateData).length > 0) {
       await prisma.conversation.updateMany({
@@ -161,17 +169,15 @@ export class LeadService {
       });
     }
 
-    return updatedLead;
+    return toLeadResponse(updatedLead);
   }
 
-  async delete(id: string, companyId: string) {
-    const lead = await prisma.lead.findFirst({
-      where: { id, companyId },
+  async delete(id: string, companyId: string, actor: Actor) {
+    const { count } = await prisma.lead.deleteMany({
+      where: { id, companyId, ...leadScope(actor) },
     });
 
-    if (!lead) throw new AppError("Lead not found", 404);
-
-    await prisma.lead.delete({ where: { id } });
+    if (count === 0) throw new AppError("Lead not found", 404);
 
     return { message: "Lead deletado com sucesso" };
   }

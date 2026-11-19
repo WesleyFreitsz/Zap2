@@ -1,3 +1,4 @@
+import { assertConversationAccess } from "../conversations/conversation-access";
 import { Prisma } from "@prisma/client";
 import prisma from "../../config/prisma";
 import { emitMessageCreated } from "../../realtime";
@@ -66,9 +67,7 @@ export class ProductService {
       where: { id: conversationId, companyId },
     });
     if (!conversation) throw new AppError("Conversation not found", 404);
-    if (role === "EMPLOYEE" && conversation.assignedToId !== userId) {
-      throw new AppError("Access denied to this conversation", 403);
-    }
+    assertConversationAccess(conversation, { userId, role });
 
     const imageUrl = product.imageUrl;
     const promoPrice = product.promotionalPrice;

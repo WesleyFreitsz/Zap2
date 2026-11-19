@@ -123,7 +123,7 @@ export class ChannelsService {
 
   async findAll(companyId: string) {
     const rows = await prisma.integration.findMany({
-      where: { companyId },
+      where: { companyId, NOT: { provider: "META", status: "INACTIVE" } },
       select: channelSelect,
       orderBy: { createdAt: "asc" },
     });
@@ -214,7 +214,16 @@ export class ChannelsService {
     });
     if (!integration) throw new AppError("Canal não encontrado", 404);
 
-    if (integration.provider === "WPPCONNECT" && integration.type === "WHATSAPP") {
+    if (integration.provider === "META") {
+      // desativa em vez de apagar: as conversas mantêm o vínculo e nada sai por outro número
+      await prisma.integration.updateMany({
+        where: { id, companyId },
+        data: { status: "INACTIVE", connectionStatus: "DISCONNECTED", accessTokenEncrypted: null },
+      });
+      return { message: "Canal desconectado" };
+    }
+
+    if (integration.type === "WHATSAPP") {
       await wppConnectService.disconnect(id, companyId);
     }
     await prisma.integration.deleteMany({ where: { id, companyId } });

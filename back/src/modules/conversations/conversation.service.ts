@@ -4,6 +4,7 @@ import { emitConversationUpdated, emitMessageCreated } from "../../realtime";
 import { AppError } from "../../utils/AppError";
 import { LeadService } from "../leads/lead.service";
 import { UserService } from "../users/user.service";
+import { assertConversationAccess, conversationScope, type Actor } from "./conversation-access";
 import { CreateConversationInput, UpdateConversationInput } from "./conversation.schema";
 
 const userService = new UserService();
@@ -68,11 +69,7 @@ export class ConversationService {
   }
 
   async findAll(companyId: string, userId: string, role: string) {
-    const where: Prisma.ConversationWhereInput = { companyId };
-
-    if (role === "EMPLOYEE") {
-      where.assignedToId = userId;
-    }
+    const where: Prisma.ConversationWhereInput = { companyId, ...conversationScope({ userId, role }) };
 
     const conversations = await prisma.conversation.findMany({
       where,
@@ -118,9 +115,7 @@ export class ConversationService {
     if (!row) throw new AppError("Conversation not found", 404);
     const { integration, ...conversation } = row;
 
-    if (role === "EMPLOYEE" && conversation.assignedToId !== userId) {
-      throw new AppError("Access denied to this conversation", 403);
-    }
+    assertConversationAccess(conversation, { userId, role });
 
     if (this.shouldHideConversation(conversation)) {
       throw new AppError("Conversation not found", 404);
@@ -156,12 +151,13 @@ export class ConversationService {
     return this.formatConversation(updated);
   }
 
-  async transfer(conversationId: string, toUserId: string, companyId: string) {
+  async transfer(conversationId: string, toUserId: string, companyId: string, actor: Actor) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
     });
 
     if (!conversation) throw new AppError("Conversation not found", 404);
+    assertConversationAccess(conversation, actor);
 
     const targetUser = await prisma.user.findFirst({
       where: {
@@ -199,12 +195,14 @@ export class ConversationService {
     conversationId: string,
     companyId: string,
     data: UpdateConversationInput,
+    actor: Actor,
   ) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
     });
 
     if (!conversation) throw new AppError("Conversation not found", 404);
+    assertConversationAccess(conversation, actor);
 
     const updateData: Prisma.ConversationUncheckedUpdateInput = {};
 
@@ -262,6 +260,7 @@ export class ConversationService {
   async createLeadFromConversation(
     conversationId: string,
     companyId: string,
+    actor: Actor,
   ) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
@@ -275,6 +274,7 @@ export class ConversationService {
     });
 
     if (!conversation) throw new AppError("Conversation not found", 404);
+    assertConversationAccess(conversation, actor);
 
     if (this.shouldHideConversation(conversation)) {
       throw new AppError(
@@ -308,12 +308,13 @@ export class ConversationService {
       });
   }
 
-  async close(conversationId: string, companyId: string) {
+  async close(conversationId: string, companyId: string, actor: Actor) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
     });
 
     if (!conversation) throw new AppError("Conversation not found", 404);
+    assertConversationAccess(conversation, actor);
 
     const updated = await prisma.conversation.update({
       where: { id: conversationId },

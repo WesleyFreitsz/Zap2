@@ -2,18 +2,17 @@ import prisma from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { logger } from "../../utils/logger";
 import { prepareTemplate } from "../channels/channel-sender";
+import { assertConversationAccess, conversationScope, type Actor } from "../conversations/conversation-access";
 import { CreateScheduleInput, UpdateScheduleInput } from "./schedule.schema";
 
 export class ScheduleService {
-  async create(data: CreateScheduleInput, companyId: string, userId: string, role: string) {
+  async create(data: CreateScheduleInput, companyId: string, actor: Actor) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: data.conversationId, companyId },
     });
 
     if (!conversation) throw new AppError("Conversation not found", 404);
-    if (role === "EMPLOYEE" && conversation.assignedToId !== userId) {
-      throw new AppError("Access denied to this conversation", 403);
-    }
+    assertConversationAccess(conversation, actor);
 
     const sendAt = new Date(data.sendAt);
     if (sendAt <= new Date()) {
@@ -40,9 +39,9 @@ export class ScheduleService {
     return scheduled;
   }
 
-  async findAll(companyId: string) {
+  async findAll(companyId: string, actor: Actor) {
     return prisma.scheduledMessage.findMany({
-      where: { companyId },
+      where: { companyId, conversation: conversationScope(actor) },
       include: {
         conversation: { select: { contactName: true, contactPhone: true } },
       },
@@ -54,15 +53,20 @@ export class ScheduleService {
     id: string,
     companyId: string,
     data: UpdateScheduleInput,
+    actor: Actor,
   ) {
     const scheduled = await prisma.scheduledMessage.findFirst({
-      where: { id, companyId },
+      where: { id, companyId, conversation: conversationScope(actor) },
     });
 
     if (!scheduled) throw new AppError("Scheduled message not found", 404);
 
     if (scheduled.status !== "PENDING" && scheduled.status !== "FAILED") {
       throw new AppError("Only pending or failed messages can be updated", 400);
+    }
+
+    if (scheduled.template && data.content !== undefined) {
+      throw new AppError("Mensagem com template não pode ter o texto editado; cancele e agende de novo", 422);
     }
 
     const sendAt = data.sendAt === undefined ? undefined : new Date(data.sendAt);
@@ -87,15 +91,13 @@ export class ScheduleService {
     });
   }
 
-  async cancel(id: string, companyId: string) {
-    const scheduled = await prisma.scheduledMessage.findFirst({
-      where: { id, companyId, status: "PENDING" },
+  async cancel(id: string, companyId: string, actor: Actor) {
+    const { count } = await prisma.scheduledMessage.deleteMany({
+      where: { id, companyId, status: "PENDING", conversation: conversationScope(actor) },
     });
 
-    if (!scheduled)
+    if (count === 0)
       throw new AppError("Scheduled message not found or already sent", 404);
-
-    await prisma.scheduledMessage.delete({ where: { id } });
 
     return { message: "Scheduled message cancelled" };
   }

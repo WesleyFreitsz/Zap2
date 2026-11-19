@@ -14,26 +14,32 @@ router.get("/", (req, res, next) => {
   return res.status(200).type("text/plain").send(challenge);
 });
 
-router.post("/", (req, res, next) => {
+router.post("/", async (req, res, next) => {
   if (!env.META_APP_SECRET) return next(new AppError("Integração Meta não configurada", 503));
   if (!verifyWebhookSignature(req.rawBody, req.get("X-Hub-Signature-256"), env.META_APP_SECRET)) {
     return res.sendStatus(401);
   }
 
-  res.sendStatus(200);
-  void processWebhook(req.body).catch((error: unknown) => {
-    logger.error("[Meta Webhook] Falha ao processar eventos", { error });
-  });
+  try {
+    // grava antes de confirmar: com 500 a Meta reenvia e o externalId evita duplicar
+    const failures = await processWebhook(req.body);
+    res.sendStatus(failures > 0 ? 500 : 200);
+  } catch (error) {
+    next(error);
+  }
 });
 
-async function processWebhook(payload: unknown): Promise<void> {
+async function processWebhook(payload: unknown): Promise<number> {
+  let failures = 0;
   for (const message of parseMetaWebhook(payload)) {
     try {
       await ingestInbound(message);
     } catch (error) {
+      failures++;
       logger.error("[Meta Webhook] Falha ao processar mensagem", { externalId: message.externalId, error });
     }
   }
+  return failures;
 }
 
 export default router;

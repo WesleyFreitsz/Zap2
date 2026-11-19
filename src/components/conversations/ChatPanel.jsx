@@ -26,7 +26,7 @@ const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 export default function ChatPanel({ conversation, messages = [] }) {
   const [input, setInput] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [suggestedReply, setSuggestedReply] = useState("");
+  const [suggestion, setSuggestion] = useState(null);
   const [showProductModal, setShowProductModal] = useState(false);
   const [expiredWindow, setExpiredWindow] = useState(null);
   const scrollRef = useRef(null);
@@ -37,6 +37,12 @@ export default function ChatPanel({ conversation, messages = [] }) {
   const isWhatsAppMeta = conversation?.channel === "WHATSAPP" && conversation.provider === "META";
   const windowEndsAt = Date.parse(conversation?.lastClientMessageAt) + WHATSAPP_WINDOW_MS;
   const isWindowClosed = isWhatsAppMeta && !(Date.now() < windowEndsAt && expiredWindow !== windowEndsAt);
+  const suggestedReply = suggestion?.conversationId === conversation?.id ? suggestion.text : "";
+
+  useEffect(() => {
+    setInput("");
+    setSuggestion(null);
+  }, [conversation?.id]);
 
   useEffect(() => {
     const remaining = windowEndsAt - Date.now();
@@ -64,7 +70,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
       });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       setInput("");
-      setSuggestedReply("");
+      setSuggestion(null);
     },
     onError: (error) => {
       toast.error(error.response?.data?.message || "Erro ao enviar mensagem");
@@ -74,7 +80,9 @@ export default function ChatPanel({ conversation, messages = [] }) {
   const handleSuggest = async () => {
     setGenerating(true);
     try {
-      setSuggestedReply(await messagesApi.suggestReply(conversation.id));
+      const conversationId = conversation.id;
+      const text = await messagesApi.suggestReply(conversationId);
+      setSuggestion({ conversationId, text });
     } catch (error) {
       toast.error(
         error.response?.data?.message || "Não foi possível gerar a sugestão",
@@ -174,7 +182,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setSuggestedReply("")}
+                onClick={() => setSuggestion(null)}
                 className="text-xs h-7"
               >
                 Ignorar
@@ -183,7 +191,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
                 size="sm"
                 onClick={() => {
                   setInput(suggestedReply);
-                  setSuggestedReply("");
+                  setSuggestion(null);
                 }}
                 className="text-xs h-7 bg-primary hover:bg-primary/90"
               >

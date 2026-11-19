@@ -1,3 +1,4 @@
+import { assertConversationAccess } from "../conversations/conversation-access";
 import prisma from "../../config/prisma";
 import { emitMessageCreated } from "../../realtime";
 import { AppError } from "../../utils/AppError";
@@ -43,9 +44,7 @@ export class MessageService {
 
     if (!conversation) throw new AppError("Conversation not found", 404);
 
-    if (role === "EMPLOYEE" && conversation.assignedToId !== userId) {
-      throw new AppError("Access denied to this conversation", 403);
-    }
+    assertConversationAccess(conversation, { userId, role });
     return conversation;
   }
 
@@ -81,9 +80,7 @@ export class MessageService {
 
     if (!conversation) throw new AppError("Conversation not found", 404);
 
-    if (role === "EMPLOYEE" && conversation.assignedToId !== userId) {
-      throw new AppError("Access denied to this conversation", 403);
-    }
+    assertConversationAccess(conversation, { userId, role });
 
     const [recentMessages, aiConfig, products] = await Promise.all([
       prisma.message.findMany({
@@ -143,9 +140,7 @@ export class MessageService {
 
     if (!conversation) throw new AppError("Conversation not found", 404);
 
-    if (role === "EMPLOYEE" && conversation.assignedToId !== userId) {
-      throw new AppError("Access denied to this conversation", 403);
-    }
+    assertConversationAccess(conversation, { userId, role });
 
     return prisma.message.findMany({
       where: { conversationId },
