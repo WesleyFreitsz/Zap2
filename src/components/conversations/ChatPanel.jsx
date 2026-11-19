@@ -16,6 +16,7 @@ import {
 import ChatBubble from "./ChatBubble";
 import { toast } from "sonner";
 import SendProductModal from "@/components/products/SendProductModal";
+import ConversationTags from "./ConversationTags";
 import ChannelIcon, { getConversationName, getConversationPhone } from "@/components/channels/ChannelIcon";
 
 export default function ChatPanel({ conversation, messages = [] }) {
@@ -113,6 +114,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
             )}
           </div>
         </div>
+        <ConversationTags conversationId={conversation.id} />
       </div>
 
       {/* Messages */}

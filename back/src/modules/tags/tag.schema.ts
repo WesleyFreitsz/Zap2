@@ -7,3 +7,8 @@ export const createTagSchema = z.object({
 });
 
 export type CreateTagInput = z.infer<typeof createTagSchema>;
+
+export const assignTagSchema = z.object({
+  conversationId: z.string().uuid(),
+  tagId: z.string().uuid(),
+});

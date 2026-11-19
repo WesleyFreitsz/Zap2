@@ -221,6 +221,14 @@ export const tagsApi = {
   list: () => apiClient.get("/tags").then((r) => r.data.data),
   create: (data) => apiClient.post("/tags", data).then((r) => r.data.data),
   delete: (id) => apiClient.delete(`/tags/${id}`).then((r) => r.data),
+  forConversation: (conversationId) =>
+    apiClient.get(`/tags/conversation/${conversationId}`).then((r) => r.data.data),
+  assign: (conversationId, tagId) =>
+    apiClient.post("/tags/assign", { conversationId, tagId }).then((r) => r.data.data),
+  unassign: (conversationId, tagId) =>
+    apiClient
+      .delete(`/tags/conversation/${conversationId}/tag/${tagId}`)
+      .then((r) => r.data),
 };
 
 // ============ SETTINGS / PROFILE ============
