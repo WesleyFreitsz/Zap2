@@ -19,8 +19,6 @@ export default function Conversations() {
   const { data: conversations = [] } = useQuery({
     queryKey: ["conversations"],
     queryFn: () => conversationsApi.list(),
-    refetchInterval: 2000,
-    refetchIntervalInBackground: true,
   });
 
   const selectedConversation = useMemo(
@@ -35,8 +33,6 @@ export default function Conversations() {
     queryKey: ["messages", selectedConversationId],
     queryFn: () => messagesApi.list(selectedConversationId),
     enabled: !!selectedConversationId,
-    refetchInterval: 2000,
-    refetchIntervalInBackground: true,
   });
 
   const createLeadMutation = useMutation({

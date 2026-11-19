@@ -1,4 +1,5 @@
 import prisma from "../../config/prisma";
+import { emitConversationUpdated, emitMessageCreated } from "../../realtime";
 import { AppError } from "../../utils/AppError";
 import { LeadService } from "../leads/lead.service";
 import { UserService } from "../users/user.service";
@@ -61,6 +62,7 @@ export class ConversationService {
       leadId: data.leadId,
     });
 
+    emitConversationUpdated(conversation);
     return this.formatConversation(conversation);
   }
 
@@ -127,13 +129,13 @@ export class ConversationService {
     if (!targetUser)
       throw new AppError("Target user not found or inactive", 404);
 
-    return prisma.conversation
-      .update({
-        where: { id: conversationId },
-        data: { assignedToId: toUserId, status: "OPEN" },
-        include: { assignedTo: { select: { id: true, name: true } } },
-      })
-      .then((conversation) => this.formatConversation(conversation));
+    const updated = await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { assignedToId: toUserId, status: "OPEN" },
+      include: { assignedTo: { select: { id: true, name: true } } },
+    });
+    emitConversationUpdated(updated, conversation.assignedToId);
+    return this.formatConversation(updated);
   }
 
   async transfer(conversationId: string, toUserId: string, companyId: string) {
@@ -155,20 +157,23 @@ export class ConversationService {
     if (!targetUser)
       throw new AppError("Target employee not found or inactive", 404);
 
-    const updated = await prisma.conversation.update({
-      where: { id: conversationId },
-      data: { assignedToId: toUserId, status: "TRANSFERRED" },
-      include: { assignedTo: { select: { id: true, name: true } } },
-    });
+    const [updated] = await prisma.$transaction([
+      prisma.conversation.update({
+        where: { id: conversationId },
+        data: { assignedToId: toUserId, status: "TRANSFERRED" },
+        include: { assignedTo: { select: { id: true, name: true } } },
+      }),
+      prisma.message.create({
+        data: {
+          conversationId,
+          sender: "SYSTEM",
+          content: `Conversation transferred to ${targetUser.name}`,
+        },
+      }),
+    ]);
 
-    await prisma.message.create({
-      data: {
-        conversationId,
-        sender: "SYSTEM",
-        content: `Conversation transferred to ${targetUser.name}`,
-      },
-    });
-
+    emitConversationUpdated(updated, conversation.assignedToId);
+    emitMessageCreated(updated);
     return this.formatConversation(updated);
   }
 
@@ -239,7 +244,10 @@ export class ConversationService {
           _count: { select: { messages: true } },
         },
       })
-      .then((conversation) => this.formatConversation(conversation));
+      .then((updated) => {
+        emitConversationUpdated(updated);
+        return this.formatConversation(updated);
+      });
   }
 
   async createLeadFromConversation(
@@ -290,9 +298,10 @@ export class ConversationService {
           _count: { select: { messages: true } },
         },
       })
-      .then((updatedConversation) =>
-        this.formatConversation(updatedConversation),
-      );
+      .then((updated) => {
+        emitConversationUpdated(updated);
+        return this.formatConversation(updated);
+      });
   }
 
   async close(conversationId: string, companyId: string) {
@@ -302,10 +311,12 @@ export class ConversationService {
 
     if (!conversation) throw new AppError("Conversation not found", 404);
 
-    return prisma.conversation.update({
+    const updated = await prisma.conversation.update({
       where: { id: conversationId },
       data: { status: "CLOSED" },
     });
+    emitConversationUpdated(updated);
+    return updated;
   }
 
   private shouldHideConversation(conversation: {

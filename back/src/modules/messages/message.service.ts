@@ -1,4 +1,5 @@
 import prisma from "../../config/prisma";
+import { emitMessageCreated } from "../../realtime";
 import { AppError } from "../../utils/AppError";
 import { logger } from "../../utils/logger";
 import { wppConnectService } from "../integrations/wppconnect/wppconnect.service";
@@ -21,12 +22,11 @@ export class MessageService {
       throw new AppError("Access denied to this conversation", 403);
     }
 
-    const sender = data.sender || "USER";
     let externalId: string | null = null;
     const destination =
       conversation.contactRemoteId || conversation.contactPhone;
 
-    if (conversation.channel === "WHATSAPP" && sender !== "CLIENT") {
+    if (conversation.channel === "WHATSAPP") {
       try {
         const result = await wppConnectService.sendMessageAuto(
           companyId,
@@ -45,19 +45,20 @@ export class MessageService {
     const message = await prisma.message.create({
       data: {
         conversationId: data.conversationId,
-        sender: sender as any,
+        sender: "USER",
         content: data.content,
         externalId: externalId || undefined,
       },
     });
 
-    await prisma.conversation.update({
+    const updated = await prisma.conversation.update({
       where: { id: data.conversationId },
       data: { updatedAt: new Date() },
     });
+    emitMessageCreated(updated);
 
     logger.info(
-      `Message sent in conversation ${data.conversationId} by ${sender}${externalId ? ` (ext: ${externalId})` : ""}`,
+      `Message sent in conversation ${data.conversationId} by ${userId}${externalId ? ` (ext: ${externalId})` : ""}`,
     );
 
     return message;

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { Request, Response, NextFunction } from "express";
 import { BillingService } from "./billing.service";
 import { AppError } from "../../utils/AppError";
@@ -75,13 +76,21 @@ export class BillingController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      // Verify webhook token if configured
-      if (env.ASAAS_WEBHOOK_TOKEN) {
-        const token = req.headers["asaas-access-token"] as string;
-        if (token !== env.ASAAS_WEBHOOK_TOKEN) {
-          res.status(401).json({ error: "Invalid webhook token" });
-          return;
-        }
+      const webhookToken = env.ASAAS_WEBHOOK_TOKEN;
+      const token = req.headers["asaas-access-token"];
+      if (!webhookToken.trim() || typeof token !== "string") {
+        res.status(401).json({ error: "Invalid webhook token" });
+        return;
+      }
+
+      const expectedToken = Buffer.from(webhookToken);
+      const receivedToken = Buffer.from(token);
+      if (
+        receivedToken.length !== expectedToken.length ||
+        !timingSafeEqual(receivedToken, expectedToken)
+      ) {
+        res.status(401).json({ error: "Invalid webhook token" });
+        return;
       }
 
       const result = await billingService.handleAsaasWebhook(req.body);

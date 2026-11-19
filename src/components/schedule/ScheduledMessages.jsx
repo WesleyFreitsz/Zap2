@@ -22,6 +22,10 @@ const statusConfig = {
     label: "Aguardando",
     color: "bg-amber-100 text-amber-700 border-amber-200",
   },
+  sending: {
+    label: "Enviando",
+    color: "bg-blue-100 text-blue-700 border-blue-200",
+  },
   sent: {
     label: "Enviada",
     color: "bg-green-100 text-green-700 border-green-200",
@@ -62,6 +66,8 @@ export default function ScheduledMessages() {
   const { data: scheduled = [], isLoading } = useQuery({
     queryKey: ["scheduled_messages"],
     queryFn: () => scheduleApi.list(),
+    select: (messages) =>
+      messages.map((message) => ({ ...message, status: message.status.toLowerCase() })),
   });
 
   const deleteMutation = useMutation({
@@ -70,7 +76,7 @@ export default function ScheduledMessages() {
   });
 
   const cancelMutation = useMutation({
-    mutationFn: (id) => scheduleApi.update(id, { status: "CANCELLED" }),
+    mutationFn: (id) => scheduleApi.delete(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["scheduled_messages"] }),
   });
 
@@ -161,6 +167,7 @@ export default function ScheduledMessages() {
                           <Badge
                             variant="outline"
                             className={`text-xs ${statusConfig[msg.status]?.color}`}
+                            title={msg.status === "failed" ? msg.error : undefined}
                           >
                             {statusConfig[msg.status]?.label}
                           </Badge>

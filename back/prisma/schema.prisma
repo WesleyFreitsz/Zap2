@@ -30,6 +30,8 @@ enum SenderType {
 enum ScheduledMessageStatus {
   PENDING
   SENT
+  SENDING
+  FAILED
 }
 
 enum IntegrationType {
@@ -222,6 +224,8 @@ model ScheduledMessage {
   content        String
   sendAt         DateTime
   status         ScheduledMessageStatus @default(PENDING)
+  sentAt         DateTime?
+  error          String?
   companyId      String
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

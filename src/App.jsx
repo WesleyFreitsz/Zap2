@@ -19,6 +19,7 @@ import {
 import PageNotFound from "./lib/PageNotFound";
 
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
+import { useRealtime } from "@/lib/realtime";
 
 import { ThemeProvider } from "@/lib/ThemeContext";
 
@@ -146,6 +147,11 @@ const RoleRoute = ({ children, allowed }) => {
 
 
 
+function Realtime() {
+  useRealtime();
+  return null;
+}
+
 function App() {
 
   return (
@@ -155,6 +161,7 @@ function App() {
       <AuthProvider>
 
         <QueryClientProvider client={queryClientInstance}>
+          <Realtime />
 
           <Router>
 

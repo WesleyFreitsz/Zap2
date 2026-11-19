@@ -46,7 +46,10 @@ export class WppConnectController {
   async status(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const integrationId = req.params.integrationId as string;
-      const result = await wppConnectService.getSessionStatus(integrationId);
+      const result = await wppConnectService.getSessionStatus(
+        integrationId,
+        getCompanyId(req),
+      );
       res.status(200).json({ status: "success", data: result });
     } catch (error) {
       next(error);
@@ -56,7 +59,10 @@ export class WppConnectController {
   async qrCode(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const integrationId = req.params.integrationId as string;
-      const result = await wppConnectService.getQrCode(integrationId);
+      const result = await wppConnectService.getQrCode(
+        integrationId,
+        getCompanyId(req),
+      );
       res.status(200).json({ status: "success", data: result });
     } catch (error) {
       next(error);
@@ -70,7 +76,10 @@ export class WppConnectController {
   ): Promise<void> {
     try {
       const integrationId = req.params.integrationId as string;
-      const result = await wppConnectService.reconnect(integrationId);
+      const result = await wppConnectService.reconnect(
+        integrationId,
+        getCompanyId(req),
+      );
       res.status(200).json({ status: "success", data: result });
     } catch (error) {
       next(error);
@@ -84,7 +93,10 @@ export class WppConnectController {
   ): Promise<void> {
     try {
       const integrationId = req.params.integrationId as string;
-      const result = await wppConnectService.disconnect(integrationId);
+      const result = await wppConnectService.disconnect(
+        integrationId,
+        getCompanyId(req),
+      );
       res.status(200).json({ status: "success", data: result });
     } catch (error) {
       next(error);
@@ -103,6 +115,7 @@ export class WppConnectController {
       if (integrationId) {
         result = await wppConnectService.sendMessage(
           integrationId,
+          companyId,
           phone,
           message,
         );
@@ -134,7 +147,11 @@ export class WppConnectController {
       const options = { number, type, url, base64, caption, fileName };
       let result;
       if (integrationId) {
-        result = await wppConnectService.sendMedia(integrationId, options);
+        result = await wppConnectService.sendMedia(
+          integrationId,
+          companyId,
+          options,
+        );
       } else {
         result = await wppConnectService.sendMediaAuto(companyId, options);
       }

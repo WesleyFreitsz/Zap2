@@ -2,6 +2,7 @@ import * as wppconnect from "@wppconnect-team/wppconnect";
 import { rmSync, existsSync } from "fs";
 import { join } from "path";
 import prisma from "../../../config/prisma";
+import { emitMessageCreated } from "../../../realtime";
 import { AppError } from "../../../utils/AppError";
 import { logger } from "../../../utils/logger";
 import { normalizePhone } from "../../../utils/phone";
@@ -228,8 +229,8 @@ export class WppConnectService {
   }
 
   // ─── Get Session Status ─────────────────────────────────────
-  async getSessionStatus(integrationId: string) {
-    const integration = await this.getIntegration(integrationId);
+  async getSessionStatus(integrationId: string, companyId: string) {
+    const integration = await this.getIntegration(integrationId, companyId);
     const client = sessions.get(integrationId);
 
     let status = integration.connectionStatus;
@@ -251,8 +252,8 @@ export class WppConnectService {
   }
 
   // ─── Get QR Code ────────────────────────────────────────────
-  async getQrCode(integrationId: string) {
-    const integration = await this.getIntegration(integrationId);
+  async getQrCode(integrationId: string, companyId: string) {
+    const integration = await this.getIntegration(integrationId, companyId);
     return {
       qrCode: integration.qrCode,
       label: integration.instanceName,
@@ -260,8 +261,8 @@ export class WppConnectService {
   }
 
   // ─── Reconnect ──────────────────────────────────────────────
-  async reconnect(integrationId: string) {
-    const integration = await this.getIntegration(integrationId);
+  async reconnect(integrationId: string, companyId: string) {
+    const integration = await this.getIntegration(integrationId, companyId);
 
     if (busyIntegrations.has(integrationId)) {
       throw new AppError("Esta sessão já está sendo conectada.", 409);
@@ -303,8 +304,8 @@ export class WppConnectService {
   }
 
   // ─── Disconnect ─────────────────────────────────────────────
-  async disconnect(integrationId: string) {
-    const integration = await this.getIntegration(integrationId);
+  async disconnect(integrationId: string, companyId: string) {
+    const integration = await this.getIntegration(integrationId, companyId);
     const client = sessions.get(integrationId);
 
     if (client) {
@@ -343,9 +344,11 @@ export class WppConnectService {
   // ─── Send Message (specific session) ────────────────────────
   async sendMessage(
     integrationId: string,
+    companyId: string,
     phone: string,
     text: string,
   ): Promise<{ externalId: string | null }> {
+    await this.getIntegration(integrationId, companyId);
     const client = this.getClient(integrationId);
     const chatId = this.resolveChatId(phone);
 
@@ -370,8 +373,10 @@ export class WppConnectService {
   // ─── Send Media (specific session) ──────────────────────────
   async sendMedia(
     integrationId: string,
+    companyId: string,
     options: SendMediaOptions,
   ): Promise<{ externalId: string | null }> {
+    await this.getIntegration(integrationId, companyId);
     const client = this.getClient(integrationId);
     const chatId = this.resolveChatId(options.number);
 
@@ -445,7 +450,7 @@ export class WppConnectService {
     text: string,
   ): Promise<{ externalId: string | null }> {
     const integrationId = await this.pickConnectedSession(companyId);
-    return this.sendMessage(integrationId, phone, text);
+    return this.sendMessage(integrationId, companyId, phone, text);
   }
 
   async sendMediaAuto(
@@ -453,7 +458,7 @@ export class WppConnectService {
     options: SendMediaOptions,
   ): Promise<{ externalId: string | null }> {
     const integrationId = await this.pickConnectedSession(companyId);
-    return this.sendMedia(integrationId, options);
+    return this.sendMedia(integrationId, companyId, options);
   }
 
   // ─── Restore Sessions on Startup ───────────────────────────
@@ -661,7 +666,7 @@ export class WppConnectService {
           );
         }
 
-        await prisma.conversation.update({
+        const updated = await prisma.conversation.update({
           where: { id: conversation.id },
           data: {
             updatedAt: new Date(),
@@ -686,6 +691,7 @@ export class WppConnectService {
             fileSize: mediaPayload?.fileSize,
           },
         });
+        emitMessageCreated(updated);
 
         if (conversation.leadId && avatarUrl) {
           await prisma.lead.updateMany({
@@ -851,10 +857,8 @@ export class WppConnectService {
     if (!contactRemoteId) return null;
 
     try {
-      const avatarUrl = await client.getProfilePicFromServer(contactRemoteId);
-      return typeof avatarUrl === "string" && avatarUrl.trim()
-        ? avatarUrl
-        : null;
+      const pic = await client.getProfilePicFromServer(contactRemoteId);
+      return pic?.eurl || pic?.imgFull || pic?.img || null;
     } catch {
       return null;
     }
@@ -970,9 +974,9 @@ export class WppConnectService {
     return client;
   }
 
-  private async getIntegration(integrationId: string) {
-    const integration = await prisma.integration.findUnique({
-      where: { id: integrationId },
+  private async getIntegration(integrationId: string, companyId: string) {
+    const integration = await prisma.integration.findFirst({
+      where: { id: integrationId, companyId },
     });
 
     if (!integration) {

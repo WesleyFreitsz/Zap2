@@ -3,6 +3,7 @@ import path from "path";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
+import { env } from "./config/env";
 import routes from "./routes";
 import { errorHandler } from "./middlewares/errorHandler";
 import { logger } from "./utils/logger";
@@ -10,7 +11,7 @@ import { logger } from "./utils/logger";
 const app = express();
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
-app.use(cors());
+app.use(cors({ origin: env.FRONTEND_ORIGINS }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
