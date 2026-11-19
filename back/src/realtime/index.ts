@@ -12,6 +12,7 @@ type ConversationAudience = {
 
 interface ServerEvents {
   "message:new": (event: { conversationId: string }) => void;
+  "message:updated": (event: { conversationId: string }) => void;
   "conversation:updated": (event: { conversationId: string }) => void;
 }
 
@@ -78,6 +79,10 @@ function emitToConversation(
 
 export function emitMessageCreated(conversation: ConversationAudience) {
   emitToConversation("message:new", conversation);
+}
+
+export function emitMessageUpdated(conversation: ConversationAudience) {
+  emitToConversation("message:updated", conversation);
 }
 
 export function emitConversationUpdated(

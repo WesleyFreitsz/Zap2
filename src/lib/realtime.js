@@ -53,6 +53,8 @@ export function useRealtime() {
         return;
       }
     });
+    socket.on("message:updated", ({ conversationId }) =>
+      queryClient.invalidateQueries({ queryKey: ["messages", conversationId] }));
     socket.on("conversation:updated", invalidateConversations);
     socket.on("connect", () => {
       invalidateConversations();

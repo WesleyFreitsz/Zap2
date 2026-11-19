@@ -926,7 +926,7 @@ export class WppConnectService {
   private async enforcePlanLimit(companyId: string): Promise<void> {
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      include: { _count: { select: { integrations: { where: { type: "WHATSAPP" } } } } },
+      include: { _count: { select: { integrations: { where: { type: "WHATSAPP", status: "ACTIVE" } } } } },
     });
 
     if (!company) throw new AppError("Company not found", 404);

@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { env } from "../../config/env";
 import prisma from "../../config/prisma";
-import { emitMessageCreated } from "../../realtime";
+import { emitMessageCreated, emitMessageUpdated } from "../../realtime";
 import { decryptSecret } from "../../utils/crypto";
 import { logger } from "../../utils/logger";
 import { saveMediaBuffer } from "../../utils/media";
@@ -96,8 +96,6 @@ export async function ingestInbound(inbound: InboundMessage): Promise<void> {
     contactName ||= await findContactName(inbound, integration.accessTokenEncrypted);
     assignedToId = await userService.getNextEmployeeRoundRobin(companyId);
   }
-  const media = inbound.media && await saveInboundMedia(inbound.media, integration.accessTokenEncrypted);
-
   let updated;
   try {
     updated = await prisma.$transaction(async (tx) => {
@@ -123,19 +121,39 @@ export async function ingestInbound(inbound: InboundMessage): Promise<void> {
         });
       }
 
-      await tx.message.create({
-        data: { conversationId: conversation.id, externalId, content, sender: "CLIENT", createdAt: sentAt, ...media?.fields },
+      const message = await tx.message.create({
+        data: { conversationId: conversation.id, externalId, content, sender: "CLIENT", createdAt: sentAt },
+        select: { id: true },
       });
-      return tx.conversation.update({ where: { id: conversation.id, companyId }, data: { updatedAt: new Date() } });
+      const touched = await tx.conversation.update({ where: { id: conversation.id, companyId }, data: { updatedAt: new Date() } });
+      return { conversation: touched, messageId: message.id };
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" &&
       await prisma.message.findUnique({ where: { externalId }, select: { id: true } })) {
-      await removeUnusedMedia(media?.absolutePath);
       return;
     }
     throw error;
   }
-  if (updated) emitMessageCreated(updated);
-  else await removeUnusedMedia(media?.absolutePath);
+  if (!updated) return;
+  emitMessageCreated(updated.conversation);
+  if (inbound.media) {
+    void attachInboundMedia(updated.messageId, updated.conversation, inbound.media, integration.accessTokenEncrypted);
+  }
+}
+
+async function attachInboundMedia(
+  messageId: string,
+  conversation: Parameters<typeof emitMessageUpdated>[0],
+  inboundMedia: InboundMedia,
+  accessTokenEncrypted: string | null,
+) {
+  const media = await saveInboundMedia(inboundMedia, accessTokenEncrypted);
+  if (!media) return;
+  try {
+    await prisma.message.update({ where: { id: messageId }, data: media.fields });
+    emitMessageUpdated(conversation);
+  } catch {
+    await removeUnusedMedia(media.absolutePath);
+  }
 }

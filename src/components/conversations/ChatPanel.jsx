@@ -30,6 +30,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
   const [showProductModal, setShowProductModal] = useState(false);
   const [expiredWindow, setExpiredWindow] = useState(null);
   const scrollRef = useRef(null);
+  const openConversationIdRef = useRef(conversation?.id);
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { branding } = useTheme();
@@ -40,6 +41,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
   const suggestedReply = suggestion?.conversationId === conversation?.id ? suggestion.text : "";
 
   useEffect(() => {
+    openConversationIdRef.current = conversation?.id;
     setInput("");
     setSuggestion(null);
   }, [conversation?.id]);
@@ -58,17 +60,13 @@ export default function ChatPanel({ conversation, messages = [] }) {
   }, [messages]);
 
   const sendMutation = useMutation({
-    mutationFn: async (content) => {
-      return messagesApi.send({
-        conversationId: conversation.id,
-        content,
-      });
-    },
-    onSuccess: () => {
+    mutationFn: (message) => messagesApi.send(message),
+    onSuccess: (_data, { conversationId }) => {
       queryClient.invalidateQueries({
-        queryKey: ["messages", conversation.id],
+        queryKey: ["messages", conversationId],
       });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      if (conversationId !== openConversationIdRef.current) return;
       setInput("");
       setSuggestion(null);
     },
@@ -95,7 +93,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
   const handleSend = () => {
     const content = input.trim();
     if (!content || (isWhatsAppMeta && !(Date.now() < windowEndsAt))) return;
-    sendMutation.mutate(content);
+    sendMutation.mutate({ conversationId: conversation.id, content });
   };
 
   const handleSendTemplate = async ({ templateName, language, parameters }) => {
