@@ -10,8 +10,6 @@ import ChannelIcon, { getConversationName, getConversationPhone, isSocialConvers
 
 const statusLabels = {
   OPEN: "Aberta",
-  PENDING: "Pendente",
-  BOT: "Bot",
   CLOSED: "Fechada",
   TRANSFERRED: "Transferida",
 };

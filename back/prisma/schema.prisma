@@ -17,8 +17,6 @@ enum ConversationStatus {
   OPEN
   CLOSED
   TRANSFERRED
-  PENDING
-  BOT
 }
 
 enum SenderType {
@@ -209,7 +207,6 @@ model Product {
   name             String
   description      String?
   price            Float
-  image            String?
   imageUrl         String?
   code             String?
   category         String?
@@ -247,13 +244,8 @@ model ScheduledMessage {
 model AiConfig {
   id              String  @id @default(uuid())
   companyId       String  @unique
-  aiName          String  @default("Assistente IA")
   personality     String  @default("professional")
   language        String  @default("pt-BR")
-  greeting        String  @default("Olá! Como posso ajudar?")
-  fallbackMessage String  @default("Desculpe, não entendi. Pode reformular?")
-  salesMode       Boolean @default(false)
-  autoReply       Boolean @default(true)
   maxTokens       Int     @default(500)
   temperature     Float   @default(0.7)
   systemPrompt    String? @db.Text

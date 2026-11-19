@@ -9,7 +9,6 @@ export class ProductController {
       const companyId = req.user!.companyId!;
       if (req.file) {
         const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
-        req.body.image = imageUrl;
         req.body.imageUrl = imageUrl;
       }
       const result = await productService.create(req.body, companyId);
@@ -55,7 +54,6 @@ export class ProductController {
       const companyId = req.user!.companyId!;
       if (req.file) {
         const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
-        req.body.image = imageUrl;
         req.body.imageUrl = imageUrl;
       }
       const result = await productService.update(

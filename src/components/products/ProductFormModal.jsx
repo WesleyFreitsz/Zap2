@@ -12,7 +12,7 @@ import { toast } from "sonner";
 export default function ProductFormModal({ product, onClose }) {
   const qc = useQueryClient();
   const isEdit = !!product;
-  const initialImage = product?.imageUrl || product?.image || "";
+  const initialImage = product?.imageUrl || "";
 
   const [form, setForm] = useState({
     name: product?.name || "",

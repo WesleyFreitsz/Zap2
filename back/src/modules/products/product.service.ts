@@ -63,7 +63,7 @@ export class ProductService {
     });
     if (!conversation) throw new AppError("Conversation not found", 404);
 
-    const imageUrl = product.imageUrl || product.image;
+    const imageUrl = product.imageUrl;
     const promoPrice = product.promotionalPrice;
     const displayPrice =
       promoPrice && promoPrice < product.price ? promoPrice : product.price;
@@ -122,8 +122,7 @@ export class ProductService {
       code: data.code || null,
       description: data.description || null,
       price: data.price,
-      image: data.image || null,
-      imageUrl: data.imageUrl || data.image || null,
+      imageUrl: data.imageUrl || null,
       category: data.category || null,
       promotionalPrice: data.promotionalPrice ?? null,
       stock: data.stock ?? 0,
@@ -143,12 +142,7 @@ export class ProductService {
     if (data.description !== undefined)
       mapped.description = data.description || null;
     if (data.price !== undefined) mapped.price = data.price;
-    if (data.image !== undefined) mapped.image = data.image || null;
-    if (data.imageUrl !== undefined)
-      mapped.imageUrl = data.imageUrl || data.image || null;
-    else if (data.image !== undefined) {
-      mapped.imageUrl = data.image || null;
-    }
+    if (data.imageUrl !== undefined) mapped.imageUrl = data.imageUrl || null;
     if (data.category !== undefined) mapped.category = data.category || null;
     if (data.promotionalPrice !== undefined)
       mapped.promotionalPrice = data.promotionalPrice ?? null;

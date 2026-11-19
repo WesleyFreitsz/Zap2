@@ -8,6 +8,7 @@ import {
   createConversationSchema,
   transferConversationSchema,
   assignConversationSchema,
+  updateConversationSchema,
 } from "./conversation.schema";
 
 const router = Router();
@@ -31,7 +32,7 @@ router.post(
   validate(transferConversationSchema),
   controller.transfer,
 );
-router.put("/:id", controller.update);
+router.put("/:id", validate(updateConversationSchema), controller.update);
 router.patch("/:id/close", authorize("ADMIN", "EMPLOYEE"), controller.close);
 
 export default router;

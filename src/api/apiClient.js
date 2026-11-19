@@ -159,16 +159,6 @@ export const dashboardApi = {
   weeklyActivity: () => apiClient.get("/dashboard/weekly-activity").then((r) => r.data.data),
 };
 
-// ============ INTEGRATIONS ============
-export const integrationsApi = {
-  list: () => apiClient.get("/integrations").then((r) => r.data.data),
-  create: (data) =>
-    apiClient.post("/integrations", data).then((r) => r.data.data),
-  toggle: (id) =>
-    apiClient.patch(`/integrations/${id}/toggle`).then((r) => r.data.data),
-  delete: (id) => apiClient.delete(`/integrations/${id}`).then((r) => r.data),
-};
-
 export const channelsApi = {
   list: () => apiClient.get("/channels").then((r) => r.data.data),
   metaConfig: () => apiClient.get("/channels/meta/config").then((r) => r.data.data),

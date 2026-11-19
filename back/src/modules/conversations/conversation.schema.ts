@@ -17,5 +17,15 @@ export const assignConversationSchema = z.object({
   toUserId: z.string().uuid(),
 });
 
+export const updateConversationSchema = z.object({
+  contactName: z.string().trim().min(1).optional(),
+  contactPhone: z.string().trim().min(1).optional(),
+  contactRemoteId: z.string().trim().min(1).optional(),
+  contactAvatarUrl: z.string().url().nullable().optional(),
+  leadId: z.string().uuid().nullable().optional(),
+  status: z.enum(['OPEN', 'CLOSED', 'TRANSFERRED']).optional(),
+});
+
 export type CreateConversationInput = z.infer<typeof createConversationSchema>;
 export type TransferConversationInput = z.infer<typeof transferConversationSchema>;
+export type UpdateConversationInput = z.infer<typeof updateConversationSchema>;

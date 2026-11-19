@@ -1,9 +1,10 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "../../config/prisma";
 import { emitConversationUpdated, emitMessageCreated } from "../../realtime";
 import { AppError } from "../../utils/AppError";
 import { LeadService } from "../leads/lead.service";
 import { UserService } from "../users/user.service";
-import { CreateConversationInput } from "./conversation.schema";
+import { CreateConversationInput, UpdateConversationInput } from "./conversation.schema";
 
 const userService = new UserService();
 const leadService = new LeadService();
@@ -180,16 +181,7 @@ export class ConversationService {
   async update(
     conversationId: string,
     companyId: string,
-    data: {
-      contactName?: string;
-      contactPhone?: string;
-      contactRemoteId?: string;
-      contactAvatarUrl?: string | null;
-      leadId?: string | null;
-      status?: string;
-      notes?: string;
-      temperature?: string;
-    },
+    data: UpdateConversationInput,
   ) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
@@ -197,7 +189,7 @@ export class ConversationService {
 
     if (!conversation) throw new AppError("Conversation not found", 404);
 
-    const updateData: any = {};
+    const updateData: Prisma.ConversationUncheckedUpdateInput = {};
 
     if (data.contactName !== undefined)
       updateData.contactName = data.contactName;

@@ -126,7 +126,6 @@ async function main() {
   await prisma.aiConfig.create({
     data: {
       companyId: company.id,
-      aiName: "Assistente Loja Teste",
       productContext: "Frete para o Sul: R$ 15. Trocas em até 30 dias.",
     },
   });
