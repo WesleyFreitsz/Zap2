@@ -37,6 +37,7 @@ type MetaChannel = {
   externalAccountId: string;
   label?: string;
   metaPageId?: string;
+  wabaId?: string;
 };
 
 function toChannel({ instanceName, ...channel }: ChannelRow) {
@@ -96,11 +97,11 @@ async function saveMetaChannels(companyId: string, channels: MetaChannel[], acce
       const rows = await prisma.$transaction(async (tx) => {
         await checkMetaChannels(tx, companyId, channels);
 
-        return Promise.all(channels.map(({ type, externalAccountId, label, metaPageId }) =>
+        return Promise.all(channels.map(({ type, externalAccountId, label, metaPageId, wabaId }) =>
           tx.integration.upsert({
             where: { type_externalAccountId: { type, externalAccountId }, companyId },
-            create: { ...connection, companyId, type, externalAccountId, label, metaPageId },
-            update: { ...connection, label, metaPageId },
+            create: { ...connection, companyId, type, externalAccountId, label, metaPageId, wabaId },
+            update: { ...connection, label, metaPageId, wabaId },
             select: channelSelect,
           }),
         ));
@@ -183,7 +184,7 @@ export class ChannelsService {
 
   async connectWhatsApp(companyId: string, { code, wabaId, phoneNumberId }: ConnectWhatsAppInput) {
     this.requireMetaConfig();
-    const channel: MetaChannel = { type: "WHATSAPP", externalAccountId: phoneNumberId };
+    const channel: MetaChannel = { type: "WHATSAPP", externalAccountId: phoneNumberId, wabaId };
     await checkMetaChannels(prisma, companyId, [channel]);
 
     const accessToken = await exchangeMetaCode(code);

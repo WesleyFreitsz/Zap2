@@ -20,6 +20,7 @@ const authorizeWrite = authorize("ADMIN", "SUPER_ADMIN");
 router.use(authMiddleware, subscriptionGuard);
 router.get("/", controller.findAll);
 router.get("/meta/config", controller.getMetaConfig);
+router.get("/:id/whatsapp-templates", controller.listWhatsAppTemplates);
 router.post("/meta/pages/discover", authorizeWrite, validate(discoverPagesSchema), controller.discoverPages);
 router.post("/meta/pages/connect", authorizeWrite, validate(connectPagesSchema), controller.connectPages);
 router.post("/whatsapp-cloud/connect", authorizeWrite, validate(connectWhatsAppSchema), controller.connectWhatsApp);

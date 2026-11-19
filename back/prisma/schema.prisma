@@ -227,6 +227,7 @@ model ScheduledMessage {
   id             String                 @id @default(uuid())
   conversationId String
   content        String
+  template       Json?
   sendAt         DateTime
   status         ScheduledMessageStatus @default(PENDING)
   sentAt         DateTime?
@@ -294,6 +295,7 @@ model Integration {
   provider         ChannelProvider   @default(WPPCONNECT)
   externalAccountId String?
   metaPageId       String?
+  wabaId           String?
   label            String?
   accessTokenEncrypted String?
   token            String

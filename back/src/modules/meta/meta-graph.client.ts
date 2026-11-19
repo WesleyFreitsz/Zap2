@@ -2,6 +2,7 @@ import { z } from "zod";
 import { env } from "../../config/env";
 import { AppError } from "../../utils/AppError";
 import { logger } from "../../utils/logger";
+import { toTemplateSummary, type TemplateSummary } from "./whatsapp-templates";
 
 const graphErrorSchema = z.object({
   error: z.object({ code: z.number().optional(), error_subcode: z.number().optional(), message: z.string().optional() }),
@@ -81,6 +82,13 @@ const phoneNumberSchema = z.object({
   verified_name: z.string().optional(),
 });
 const graphSuccessSchema = z.object({ success: z.literal(true) });
+const templatesPageSchema = z.object({
+  data: z.array(z.unknown()),
+  paging: z.object({
+    next: z.string().url().optional(),
+    cursors: z.object({ after: z.string().min(1) }).optional(),
+  }).optional(),
+});
 
 export type MetaPage = z.infer<typeof pageAccountsSchema>["data"][number];
 
@@ -140,6 +148,31 @@ export async function subscribeMetaPage(pageId: string, token: string): Promise<
     token,
     query: { subscribed_fields: "messages" },
   });
+}
+
+export async function listWhatsAppTemplates(wabaId: string, token: string): Promise<TemplateSummary[]> {
+  const templates: TemplateSummary[] = [];
+  const path = `${encodeURIComponent(wabaId)}/message_templates`;
+  const query = { fields: "id,name,language,status,category,components,parameter_format", limit: "100" };
+  let after: string | undefined;
+
+  for (let page = 0; page < 10; page++) {
+    const result = await readGraphResponse(templatesPageSchema, path, {
+      token,
+      query: after ? { ...query, after } : query,
+    });
+    for (const raw of result.data) {
+      const template = toTemplateSummary(raw);
+      if (template) templates.push(template);
+    }
+
+    if (!result.paging?.next || page === 9) break;
+    const cursor = result.paging.cursors?.after ?? new URL(result.paging.next).searchParams.get("after");
+    if (!cursor || cursor === after) throw new AppError("Paginação inválida da Meta", 502);
+    after = cursor;
+  }
+
+  return templates;
 }
 
 export async function subscribeMetaWhatsApp(wabaId: string, token: string): Promise<void> {

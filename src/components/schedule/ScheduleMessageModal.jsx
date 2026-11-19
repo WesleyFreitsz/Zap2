@@ -7,12 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { X, Send, Search } from "lucide-react";
 import { toast } from "sonner";
+import TemplatePicker from "@/components/conversations/TemplatePicker";
 
 export default function ScheduleMessageModal({ onClose }) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [content, setContent] = useState("");
+  const [template, setTemplate] = useState(null);
   const [sendAt, setSendAt] = useState("");
 
   const { data: conversations = [] } = useQuery({
@@ -24,6 +26,9 @@ export default function ScheduleMessageModal({ onClose }) {
     id: c.id,
     name: c.contactName || c.contactPhone,
     phone: c.contactPhone,
+    channel: c.channel,
+    provider: c.provider,
+    integrationId: c.integrationId,
   }));
 
   const createMutation = useMutation({
@@ -44,13 +49,22 @@ export default function ScheduleMessageModal({ onClose }) {
       c.phone?.includes(search),
   );
 
+  const isWhatsAppMeta = selected?.channel === "WHATSAPP" && selected.provider === "META";
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!selected) return;
     createMutation.mutate({
       conversationId: selected.id,
-      content,
+      content: template ? template.preview : content,
       sendAt: new Date(sendAt).toISOString(),
+      ...(template && {
+        template: {
+          name: template.templateName,
+          language: template.language,
+          parameters: template.parameters,
+        },
+      }),
     });
   };
 
@@ -84,7 +98,10 @@ export default function ScheduleMessageModal({ onClose }) {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => setSelected(null)}
+                  onClick={() => {
+                    setSelected(null);
+                    setTemplate(null);
+                  }}
                 >
                   Trocar
                 </Button>
@@ -136,14 +153,43 @@ export default function ScheduleMessageModal({ onClose }) {
           </div>
 
           <div className="space-y-2">
-            <Label>Mensagem *</Label>
-            <Textarea
-              placeholder="Digite a mensagem que será enviada..."
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="min-h-[100px]"
-              required
-            />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label htmlFor={template ? undefined : "scheduled-message-content"}>Mensagem *</Label>
+              {isWhatsAppMeta && (
+                <div className="flex flex-wrap gap-2">
+                  {template && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setTemplate(null)}>
+                      Usar texto
+                    </Button>
+                  )}
+                  <TemplatePicker
+                    key={selected.id}
+                    channelId={selected.integrationId}
+                    confirmLabel="Usar template"
+                    onConfirm={setTemplate}
+                  >
+                    <Button type="button" variant="outline" size="sm">
+                      {template ? "Trocar template" : "Usar template"}
+                    </Button>
+                  </TemplatePicker>
+                </div>
+              )}
+            </div>
+            {template ? (
+              <div className="space-y-1 rounded-lg bg-accent p-3">
+                <p className="break-words text-xs font-medium">{template.templateName} · {template.language}</p>
+                <p className="whitespace-pre-wrap break-words text-sm">{template.preview}</p>
+              </div>
+            ) : (
+              <Textarea
+                id="scheduled-message-content"
+                placeholder="Digite a mensagem que será enviada..."
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                className="min-h-[100px]"
+                required
+              />
+            )}
           </div>
 
           <div className="space-y-2">

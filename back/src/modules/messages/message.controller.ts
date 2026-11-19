@@ -38,6 +38,16 @@ export class MessageController {
     }
   }
 
+  async sendTemplate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { companyId, userId, role } = req.user!;
+      const result = await messageService.sendTemplate(req.body, companyId!, userId, role);
+      res.status(201).json({ status: "success", data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async findByConversation(
     req: Request,
     res: Response,

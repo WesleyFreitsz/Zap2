@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
 import { leadsApi, usersApi, conversationsApi, tagsApi } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Search,
   Plus,
+  Download,
   Pencil,
   Trash2,
   Flame,
@@ -35,6 +37,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../lib/AuthContext";
+import { downloadCsv, toCsv } from "@/lib/csv";
 import { digitsOnly, formatPhoneInput, sanitizePersonName } from "@/lib/utils";
 
 const getTagColor = (category) => {
@@ -143,9 +146,26 @@ export default function Leads() {
   const isAdmin =
     user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
 
+  function exportLeads() {
+    const headers = [
+      "Nome", "Telefone", "E-mail", "Temperatura", "Status", "Responsável", "Tags", "Criado em",
+    ];
+    const rows = leads.map((lead) => [
+      lead.name,
+      lead.phone,
+      lead.email,
+      tempLabels[lead.temperature],
+      statusLabels[lead.status],
+      lead.assignedTo?.name,
+      lead.tags?.map((tag) => tag.name).join(", "),
+      lead.createdAt ? format(new Date(lead.createdAt), "dd/MM/yyyy") : "",
+    ]);
+    downloadCsv(`leads-${format(new Date(), "yyyy-MM-dd")}.csv`, toCsv(headers, rows));
+  }
+
   return (
     <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between">
         <div className="my-3 mx-4">
           <h1 className="text-2xl font-bold">Leads</h1>
           <p className="text-sm text-muted-foreground">
@@ -153,15 +173,19 @@ export default function Leads() {
           </p>
         </div>
 
-        <Button
-          className="my-3 mx-4"
-          onClick={() => {
-            setEditing(null);
-            setShowModal(true);
-          }}
-        >
-          <Plus className="w-4 h-4" /> Novo Lead
-        </Button>
+        <div className="my-3 mx-4 flex flex-wrap gap-2">
+          <Button variant="outline" disabled={!leads.length} onClick={exportLeads}>
+            <Download className="w-4 h-4" /> Exportar CSV
+          </Button>
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setShowModal(true);
+            }}
+          >
+            <Plus className="w-4 h-4" /> Novo Lead
+          </Button>
+        </div>
       </div>
 
       {/* LISTA */}

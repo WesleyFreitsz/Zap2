@@ -30,6 +30,28 @@ export function useRealtime() {
     socket.on("message:new", ({ conversationId }) => {
       queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
       invalidateConversations();
+
+      if (
+        !document.hidden ||
+        typeof Notification === "undefined" ||
+        Notification.permission !== "granted"
+      ) return;
+
+      try {
+        if (localStorage.getItem("browserNotifications") !== "true") return;
+
+        const notification = new Notification("Nova mensagem", {
+          body: "Você recebeu uma nova mensagem no atendimento.",
+          tag: conversationId,
+        });
+        notification.onclick = () => {
+          window.focus();
+          window.location.assign(`/conversations?contact=${encodeURIComponent(conversationId)}`);
+          notification.close();
+        };
+      } catch {
+        return;
+      }
     });
     socket.on("conversation:updated", invalidateConversations);
     socket.on("connect", () => {

@@ -118,6 +118,8 @@ export const messagesApi = {
     apiClient.get(`/messages/${conversationId}`).then((r) => r.data.data),
   send: (data) =>
     apiClient.post("/messages/send", data).then((r) => r.data.data),
+  sendTemplate: (data) =>
+    apiClient.post("/messages/send-template", data).then((r) => r.data.data),
   suggestReply: (conversationId) =>
     apiClient
       .post("/messages/suggest-reply", { conversationId })
@@ -161,6 +163,12 @@ export const dashboardApi = {
 
 export const channelsApi = {
   list: () => apiClient.get("/channels").then((r) => r.data.data),
+  whatsappTemplates: (channelId, refresh = false) =>
+    apiClient
+      .get(`/channels/${channelId}/whatsapp-templates`, {
+        params: refresh ? { refresh: true } : undefined,
+      })
+      .then((r) => r.data.data),
   metaConfig: () => apiClient.get("/channels/meta/config").then((r) => r.data.data),
   discoverPages: (code) =>
     apiClient.post("/channels/meta/pages/discover", { code }).then((r) => r.data.data),

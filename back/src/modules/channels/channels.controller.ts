@@ -1,5 +1,6 @@
 import type { Request, RequestHandler } from "express";
 import { AppError } from "../../utils/AppError";
+import { getWhatsAppTemplates } from "./channel-sender";
 import type { ConnectPagesInput, ConnectWhatsAppInput, ManualConnectInput } from "./channels.schema";
 import { ChannelsService } from "./channels.service";
 
@@ -21,6 +22,9 @@ export class ChannelsController {
   constructor(private readonly service: ChannelsService) {}
 
   findAll = respond((companyId) => this.service.findAll(companyId));
+  listWhatsAppTemplates = respond((companyId, req) =>
+    getWhatsAppTemplates(companyId, req.params.id, req.query.refresh === "true")
+  );
   getMetaConfig = respond(() => this.service.getMetaConfig());
   discoverPages = respond<{ code: string }>((companyId, req) =>
     this.service.discoverPages(companyId, req.body.code)

@@ -23,6 +23,11 @@ export const manualConnectSchema = z.object({
   externalAccountId: metaId,
   accessToken: requiredText,
   metaPageId: metaId.optional(),
+  wabaId: metaId.optional(),
+}).superRefine(({ type, wabaId }, context) => {
+  if (wabaId && type !== "WHATSAPP") {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["wabaId"], message: "wabaId é exclusivo do WhatsApp" });
+  }
 });
 
 export type ConnectPagesInput = z.infer<typeof connectPagesSchema>;

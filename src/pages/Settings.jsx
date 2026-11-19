@@ -65,6 +65,18 @@ export default function Settings() {
   } = useTheme();
   const logoInputRef = useRef(null);
   const [profileForm, setProfileForm] = useState({ name: user?.name || "" });
+  const supportsBrowserNotifications = typeof Notification !== "undefined";
+  const [browserNotifications, setBrowserNotifications] = useState(() => {
+    try {
+      return (
+        supportsBrowserNotifications &&
+        Notification.permission === "granted" &&
+        localStorage.getItem("browserNotifications") === "true"
+      );
+    } catch {
+      return false;
+    }
+  });
 
   const { data: profile } = useQuery({
     queryKey: ["profile", "settings"],
@@ -178,6 +190,27 @@ export default function Settings() {
 
   const handleSaveBranding = () => {
     toast.success("Configurações de branding salvas!");
+  };
+
+  const handleBrowserNotificationsChange = async (enabled) => {
+    if (enabled) {
+      try {
+        if (await Notification.requestPermission() !== "granted") {
+          toast.error("Libere as notificações nas configurações do navegador.");
+          return;
+        }
+      } catch {
+        toast.error("Não foi possível solicitar permissão para notificações.");
+        return;
+      }
+    }
+
+    try {
+      localStorage.setItem("browserNotifications", String(enabled));
+      setBrowserNotifications(enabled);
+    } catch {
+      toast.error("Não foi possível salvar a preferência de notificações.");
+    }
   };
 
   const handleSaveProfile = () => {
@@ -423,6 +456,15 @@ export default function Settings() {
               <Play className="w-4 h-4" />
               Testar som
             </Button>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <Label htmlFor="browser-notifications">Notificações do navegador</Label>
+            <Switch
+              id="browser-notifications"
+              checked={browserNotifications}
+              disabled={!supportsBrowserNotifications}
+              onCheckedChange={handleBrowserNotificationsChange}
+            />
           </div>
         </CardContent>
       </Card>

@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import prisma from "../config/prisma";
-import { sendText } from "../modules/channels/channel-sender";
+import { prepareTemplate, sendTemplate, sendText } from "../modules/channels/channel-sender";
+import { templateInputSchema } from "../modules/meta/whatsapp-templates";
 import { emitMessageCreated } from "../realtime";
 import { logger } from "../utils/logger";
 import { AppError } from "../utils/AppError";
@@ -63,7 +64,17 @@ export default class ScheduledMessageWorker {
       }
 
       failureMessage = "Falha no envio da mensagem";
-      const { externalId } = await sendText(conversation, message.content);
+      let content = message.content;
+      let externalId: string | null;
+      if (message.template !== null) {
+        const template = templateInputSchema.safeParse(message.template);
+        if (!template.success) throw new AppError("Template indisponível", 422);
+        const prepared = await prepareTemplate(conversation, template.data, true);
+        content = prepared.content;
+        ({ externalId } = await sendTemplate(conversation, prepared.payload));
+      } else {
+        ({ externalId } = await sendText(conversation, content));
+      }
       const sentAt = new Date();
 
       failureMessage = "Mensagem enviada, mas houve falha ao registrar o envio";
@@ -72,7 +83,7 @@ export default class ScheduledMessageWorker {
           data: {
             conversationId: conversation.id,
             sender: "USER",
-            content: message.content,
+            content,
             externalId,
           },
         }),
@@ -82,7 +93,7 @@ export default class ScheduledMessageWorker {
         }),
         prisma.scheduledMessage.update({
           where: claimed,
-          data: { status: "SENT", sentAt },
+          data: { status: "SENT", sentAt, content },
         }),
       ]);
       emitMessageCreated(updated);

@@ -12,23 +12,38 @@ import {
   Sparkles,
   Loader2,
   Package,
+  FileText,
 } from "lucide-react";
 import ChatBubble from "./ChatBubble";
+import TemplatePicker from "./TemplatePicker";
 import { toast } from "sonner";
 import SendProductModal from "@/components/products/SendProductModal";
 import ConversationTags from "./ConversationTags";
 import ChannelIcon, { getConversationName, getConversationPhone } from "@/components/channels/ChannelIcon";
+
+const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export default function ChatPanel({ conversation, messages = [] }) {
   const [input, setInput] = useState("");
   const [generating, setGenerating] = useState(false);
   const [suggestedReply, setSuggestedReply] = useState("");
   const [showProductModal, setShowProductModal] = useState(false);
+  const [expiredWindow, setExpiredWindow] = useState(null);
   const scrollRef = useRef(null);
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { branding } = useTheme();
   const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+  const isWhatsAppMeta = conversation?.channel === "WHATSAPP" && conversation.provider === "META";
+  const windowEndsAt = Date.parse(conversation?.lastClientMessageAt) + WHATSAPP_WINDOW_MS;
+  const isWindowClosed = isWhatsAppMeta && !(Date.now() < windowEndsAt && expiredWindow !== windowEndsAt);
+
+  useEffect(() => {
+    const remaining = windowEndsAt - Date.now();
+    if (!isWhatsAppMeta || !(remaining > 0)) return;
+    const timer = setTimeout(() => setExpiredWindow(windowEndsAt), remaining);
+    return () => clearTimeout(timer);
+  }, [isWhatsAppMeta, windowEndsAt]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -71,8 +86,15 @@ export default function ChatPanel({ conversation, messages = [] }) {
 
   const handleSend = () => {
     const content = input.trim();
-    if (!content) return;
+    if (!content || (isWhatsAppMeta && !(Date.now() < windowEndsAt))) return;
     sendMutation.mutate(content);
+  };
+
+  const handleSendTemplate = async ({ templateName, language, parameters }) => {
+    const conversationId = conversation.id;
+    await messagesApi.sendTemplate({ conversationId, templateName, language, parameters });
+    queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
+    queryClient.invalidateQueries({ queryKey: ["conversations"] });
   };
 
   if (!conversation) {
@@ -138,7 +160,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
       </div>
 
       {/* Suggested reply */}
-      {suggestedReply && (
+      {suggestedReply && !isWindowClosed && (
         <div className="px-4 py-2 border-t border-border bg-accent/30">
           <div className="flex items-start gap-2">
             <Sparkles className="w-4 h-4 text-primary mt-0.5 shrink-0" />
@@ -175,47 +197,77 @@ export default function ChatPanel({ conversation, messages = [] }) {
       {/* Input */}
       <div className="px-4 py-3 border-t border-border bg-card">
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleSuggest}
-            disabled={generating || messages.length === 0}
-            className="shrink-0"
-            title="Sugerir resposta com IA"
-          >
-            {generating ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Sparkles className="w-4 h-4" />
-            )}
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setShowProductModal(true)}
-            className="shrink-0"
-            title="Enviar produto"
-          >
-            <Package className="w-4 h-4" />
-          </Button>
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-            placeholder="Digite sua mensagem..."
-            className="flex-1 bg-muted/50 border-0"
-          />
-          <Button
-            size="icon"
-            onClick={handleSend}
-            disabled={!input.trim() || sendMutation.isPending}
-            className="bg-primary hover:bg-primary/90 shrink-0"
-          >
-            <Send className="w-4 h-4" />
-          </Button>
+          {isWindowClosed ? (
+            <p className="flex-1 text-sm text-muted-foreground">
+              Janela de 24h fechada. Para retomar a conversa, envie um template.
+            </p>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleSuggest}
+                disabled={generating || messages.length === 0}
+                className="shrink-0"
+                title="Sugerir resposta com IA"
+              >
+                {generating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setShowProductModal(true)}
+                className="shrink-0"
+                title="Enviar produto"
+              >
+                <Package className="w-4 h-4" />
+              </Button>
+            </>
+          )}
+          {isWhatsAppMeta && (
+            <TemplatePicker
+              key={conversation.id}
+              channelId={conversation.integrationId}
+              confirmLabel="Enviar template"
+              onConfirm={handleSendTemplate}
+            >
+              <Button
+                variant="outline"
+                size={isWindowClosed ? "sm" : "icon"}
+                title="Enviar template"
+                aria-label="Enviar template"
+                className="shrink-0"
+              >
+                {isWindowClosed ? "Enviar template" : <FileText className="w-4 h-4" />}
+              </Button>
+            </TemplatePicker>
+          )}
+          {!isWindowClosed && (
+            <>
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+                placeholder="Digite sua mensagem..."
+                className="flex-1 bg-muted/50 border-0"
+              />
+              <Button
+                size="icon"
+                onClick={handleSend}
+                disabled={!input.trim() || sendMutation.isPending}
+                className="bg-primary hover:bg-primary/90 shrink-0"
+              >
+                <Send className="w-4 h-4" />
+              </Button>
+            </>
+          )}
         </div>
       </div>
-      {showProductModal && (
+      {showProductModal && !isWindowClosed && (
         <SendProductModal
           conversationId={conversation.id}
           onClose={() => setShowProductModal(false)}

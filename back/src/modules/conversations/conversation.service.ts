@@ -68,7 +68,7 @@ export class ConversationService {
   }
 
   async findAll(companyId: string, userId: string, role: string) {
-    const where: any = { companyId };
+    const where: Prisma.ConversationWhereInput = { companyId };
 
     if (role === "EMPLOYEE") {
       where.assignedToId = userId;
@@ -82,17 +82,28 @@ export class ConversationService {
           select: { id: true, name: true, phone: true, avatarUrl: true },
         },
         _count: { select: { messages: true } },
+        integration: { select: { provider: true } },
+        messages: {
+          where: { sender: "CLIENT" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { createdAt: true },
+        },
       },
       orderBy: { updatedAt: "desc" },
     });
 
     return conversations
       .filter((conversation) => !this.shouldHideConversation(conversation))
-      .map((conversation) => this.formatConversation(conversation));
+      .map(({ integration, messages, ...conversation }) => this.formatConversation({
+        ...conversation,
+        provider: integration?.provider ?? null,
+        lastClientMessageAt: messages[0]?.createdAt ?? null,
+      }));
   }
 
   async findById(id: string, companyId: string, userId: string, role: string) {
-    const conversation = await prisma.conversation.findFirst({
+    const row = await prisma.conversation.findFirst({
       where: { id, companyId },
       include: {
         assignedTo: { select: { id: true, name: true, email: true } },
@@ -100,10 +111,12 @@ export class ConversationService {
           select: { id: true, name: true, phone: true, avatarUrl: true },
         },
         messages: { orderBy: { createdAt: "asc" } },
+        integration: { select: { provider: true } },
       },
     });
 
-    if (!conversation) throw new AppError("Conversation not found", 404);
+    if (!row) throw new AppError("Conversation not found", 404);
+    const { integration, ...conversation } = row;
 
     if (role === "EMPLOYEE" && conversation.assignedToId !== userId) {
       throw new AppError("Access denied to this conversation", 403);
@@ -113,7 +126,11 @@ export class ConversationService {
       throw new AppError("Conversation not found", 404);
     }
 
-    return this.formatConversation(conversation);
+    const lastClientMessageAt = conversation.messages.reduce<Date | null>(
+      (last, message) => message.sender === "CLIENT" ? message.createdAt : last,
+      null,
+    );
+    return this.formatConversation({ ...conversation, provider: integration?.provider ?? null, lastClientMessageAt });
   }
 
   async assign(conversationId: string, toUserId: string, companyId: string) {
