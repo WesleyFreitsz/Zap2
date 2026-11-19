@@ -17,6 +17,7 @@ import {
 
 const whatsappResponse = z.object({ messages: z.array(z.object({ id: z.string().min(1) })).nonempty() });
 const pageResponse = z.object({ message_id: z.string().min(1) });
+const metaImageUrl = z.string().url().regex(/^https:\/\/[^/\\\s]/i);
 const templateCacheTtl = 5 * 60 * 1000;
 const templateCache = new Map<string, { wabaId: string; updatedAt: number; expiresAt: number; templates: TemplateSummary[] }>();
 
@@ -79,7 +80,10 @@ export async function prepareTemplate(conversation: Conversation, input: Templat
 async function sendWhatsApp(
   conversation: Conversation,
   { accountId, token }: NonNullable<Awaited<ReturnType<typeof getMetaSender>>>,
-  message: { type: "text"; text: { preview_url: boolean; body: string } } | { type: "template"; template: TemplatePayload },
+  message:
+    | { type: "text"; text: { preview_url: boolean; body: string } }
+    | { type: "template"; template: TemplatePayload }
+    | { type: "image"; image: { link: string; caption: string } },
 ) {
   const response = await graphRequest(`${encodeURIComponent(accountId)}/messages`, {
     token,
@@ -120,15 +124,54 @@ export async function sendText(conversation: Conversation, text: string): Promis
     return sendWhatsApp(conversation, sender, { type: "text", text: { preview_url: false, body: text } });
   }
 
+  return sendPageMessage(destination, sender.token, { text });
+}
+
+async function sendPageMessage(
+  destination: string,
+  token: string,
+  message: { text: string } | { attachment: { type: "image"; payload: { url: string; is_reusable: true } } },
+) {
   const response = await graphRequest("me/messages", {
-    query: { access_token: sender.token },
+    query: { access_token: token },
     body: {
       recipient: { id: destination },
       messaging_type: "RESPONSE",
-      message: { text },
+      message,
     },
   });
   const result = pageResponse.safeParse(response);
   if (!result.success) throw new AppError("Resposta de envio inválida da Meta", 502);
   return { externalId: result.data.message_id };
+}
+
+export async function sendImage(conversation: Conversation, { url, caption }: { url: string; caption: string }) {
+  const { companyId, channel, contactRemoteId, contactPhone } = conversation;
+  const destination = contactRemoteId || contactPhone;
+  const sender = await getMetaSender(conversation);
+
+  if (!sender) {
+    if (channel !== "WHATSAPP") throw new AppError("Canal sem integração ativa", 422);
+    return wppConnectService.sendMediaAuto(companyId, { number: destination, type: "image", url, caption });
+  }
+
+  if (!metaImageUrl.safeParse(url).success) {
+    throw new AppError("A imagem precisa estar em um endereço público (https) para ser enviada por este canal", 422);
+  }
+
+  if (channel === "WHATSAPP") {
+    return sendWhatsApp(conversation, sender, { type: "image", image: { link: url, caption } });
+  }
+
+  const image = await sendPageMessage(destination, sender.token, {
+    attachment: { type: "image", payload: { url, is_reusable: true } },
+  });
+  if (caption) {
+    try {
+      await sendPageMessage(destination, sender.token, { text: caption });
+    } catch {
+      logger.warn("[ChannelSender] Falha no envio da legenda da imagem", { conversationId: conversation.id });
+    }
+  }
+  return image;
 }

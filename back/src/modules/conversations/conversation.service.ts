@@ -231,7 +231,7 @@ export class ConversationService {
         if (!lead) throw new AppError("Lead not found", 404);
 
         updateData.leadId = lead.id;
-        updateData.contactPhone = lead.phone;
+        if (lead.phone) updateData.contactPhone = lead.phone;
 
         if (lead.avatarUrl) {
           updateData.contactAvatarUrl = lead.avatarUrl;
@@ -283,19 +283,14 @@ export class ConversationService {
       );
     }
 
-    const lead = await leadService.findOrCreateByPhone(
-      conversation.contactPhone,
-      companyId,
-      conversation.contactName,
-      conversation.contactAvatarUrl,
-    );
+    const lead = await leadService.findOrCreateForConversation(conversation, companyId);
 
     return prisma.conversation
       .update({
         where: { id: conversationId },
         data: {
           leadId: lead.id,
-          contactPhone: lead.phone,
+          ...(lead.phone && { contactPhone: lead.phone }),
           contactAvatarUrl:
             lead.avatarUrl || conversation.contactAvatarUrl || null,
         },

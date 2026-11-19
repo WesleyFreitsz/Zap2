@@ -38,6 +38,8 @@ import {
 import { toast } from "sonner";
 import { useAuth } from "../lib/AuthContext";
 import { downloadCsv, toCsv } from "@/lib/csv";
+import ChannelIcon, { channelLabels } from "@/components/channels/ChannelIcon";
+import LeadFormModal from "@/components/leads/LeadFormModal";
 import { digitsOnly, formatPhoneInput, sanitizePersonName } from "@/lib/utils";
 
 const getTagColor = (category) => {
@@ -137,8 +139,8 @@ export default function Leads() {
       qc.invalidateQueries({ queryKey: ["leads"] });
       toast.success("Conversa iniciada com sucesso");
 
-      if (data?.data?.id) {
-        window.location.href = `/conversations/${data.data.id}`;
+      if (data?.id) {
+        window.location.href = `/conversations?contact=${data.id}`;
       }
     },
   });
@@ -152,7 +154,7 @@ export default function Leads() {
     ];
     const rows = leads.map((lead) => [
       lead.name,
-      lead.phone,
+      lead.phone || channelLabels[lead.channel],
       lead.email,
       tempLabels[lead.temperature],
       statusLabels[lead.status],
@@ -207,9 +209,16 @@ export default function Leads() {
               >
                 <p className="font-semibold">{lead.name}</p>
 
-                <p className="text-xs text-muted-foreground">
-                  {formatPhoneInput(lead.phone)}
-                </p>
+                {lead.phone ? (
+                  <p className="text-xs text-muted-foreground">
+                    {formatPhoneInput(lead.phone)}
+                  </p>
+                ) : (
+                  <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <ChannelIcon type={lead.channel} className="w-3 h-3" />
+                    {channelLabels[lead.channel]}
+                  </p>
+                )}
 
                 <Badge className={tempColors[lead.temperature]}>
                   <TempIcon className="w-3 h-3" />
@@ -231,15 +240,17 @@ export default function Leads() {
                 </div>
 
                 <div className="flex gap-2 mt-3">
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      startConversationMutation.mutate(lead)
-                    }
-                  >
-                    <MessageSquare className="w-3 h-3 mr-1" />
-                    Conversar
-                  </Button>
+                  {lead.phone && (
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        startConversationMutation.mutate(lead)
+                      }
+                    >
+                      <MessageSquare className="w-3 h-3 mr-1" />
+                      Conversar
+                    </Button>
+                  )}
 
                   {isAdmin && (
                     <Button
@@ -266,6 +277,18 @@ export default function Leads() {
             );
           })}
         </div>
+      )}
+
+      {showModal && (
+        <LeadFormModal
+          lead={editing}
+          tempLabels={tempLabels}
+          statusLabels={statusLabels}
+          onClose={() => {
+            setShowModal(false);
+            setEditing(null);
+          }}
+        />
       )}
     </div>
   );

@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from "react";
 import { messagesApi } from "@/api/apiClient";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/AuthContext";
 import { useTheme } from "@/lib/ThemeContext";
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 import ChatBubble from "./ChatBubble";
 import TemplatePicker from "./TemplatePicker";
+import QuickReplyMenu from "./QuickReplyMenu";
 import { toast } from "sonner";
 import SendProductModal from "@/components/products/SendProductModal";
 import ConversationTags from "./ConversationTags";
@@ -248,12 +248,12 @@ export default function ChatPanel({ conversation, messages = [] }) {
           )}
           {!isWindowClosed && (
             <>
-              <Input
+              <QuickReplyMenu
+                key={conversation.id}
+                companyId={user?.companyId}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-                placeholder="Digite sua mensagem..."
-                className="flex-1 bg-muted/50 border-0"
+                onChange={setInput}
+                onSend={handleSend}
               />
               <Button
                 size="icon"

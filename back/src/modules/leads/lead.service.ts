@@ -1,3 +1,4 @@
+import type { Conversation } from "@prisma/client";
 import prisma from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { CreateLeadInput, UpdateLeadInput } from "./lead.schema";
@@ -173,6 +174,35 @@ export class LeadService {
     await prisma.lead.delete({ where: { id } });
 
     return { message: "Lead deletado com sucesso" };
+  }
+
+  async findOrCreateForConversation(
+    conversation: Pick<
+      Conversation,
+      "channel" | "contactPhone" | "contactRemoteId" | "contactName" | "contactAvatarUrl"
+    >,
+    companyId: string,
+  ) {
+    const { channel, contactPhone, contactName, contactAvatarUrl } = conversation;
+    if (channel === "WHATSAPP") {
+      return this.findOrCreateByPhone(contactPhone, companyId, contactName, contactAvatarUrl);
+    }
+
+    const contactRemoteId = conversation.contactRemoteId || contactPhone;
+    const name = contactName && contactName !== contactRemoteId ? contactName : "Contato sem nome";
+    return prisma.lead.upsert({
+      where: { companyId_channel_contactRemoteId: { companyId, channel, contactRemoteId } },
+      create: {
+        name,
+        channel,
+        contactRemoteId,
+        avatarUrl: contactAvatarUrl || null,
+        companyId,
+        temperature: "COLD",
+        status: "NEW",
+      },
+      update: {},
+    });
   }
 
   async findOrCreateByPhone(

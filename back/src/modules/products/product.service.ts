@@ -1,6 +1,8 @@
 import { Prisma } from "@prisma/client";
 import prisma from "../../config/prisma";
+import { emitMessageCreated } from "../../realtime";
 import { AppError } from "../../utils/AppError";
+import { sendImage, sendText } from "../channels/channel-sender";
 import { CreateProductInput, UpdateProductInput } from "./product.schema";
 
 export class ProductService {
@@ -51,6 +53,8 @@ export class ProductService {
     productId: string,
     conversationId: string,
     companyId: string,
+    userId: string,
+    role: string,
     customMessage?: string,
   ) {
     const product = await prisma.product.findFirst({
@@ -62,6 +66,9 @@ export class ProductService {
       where: { id: conversationId, companyId },
     });
     if (!conversation) throw new AppError("Conversation not found", 404);
+    if (role === "EMPLOYEE" && conversation.assignedToId !== userId) {
+      throw new AppError("Access denied to this conversation", 403);
+    }
 
     const imageUrl = product.imageUrl;
     const promoPrice = product.promotionalPrice;
@@ -72,43 +79,31 @@ export class ProductService {
       customMessage ||
       `📦 *${product.name}*\n${product.description || ""}\n💰 R$ ${displayPrice.toFixed(2)}`;
 
-    const { wppConnectService } =
-      await import("../integrations/wppconnect/wppconnect.service");
-    const destination =
-      conversation.contactRemoteId || conversation.contactPhone;
+    const image = imageUrl
+      ? await sendImage(conversation, { url: imageUrl, caption: content }).catch(() => {
+          // If media fails, fall back to text
+          return null;
+        })
+      : null;
+    const { externalId } = image ?? await sendText(conversation, content);
 
-    if (imageUrl && destination) {
-      try {
-        await wppConnectService.sendMediaAuto(companyId, {
-          number: destination,
-          type: "image",
-          url: imageUrl,
-          caption: content,
-        });
-      } catch {
-        // If media fails, fall back to text
-        await wppConnectService.sendMessageAuto(
-          companyId,
-          destination,
+    const [message, updated] = await prisma.$transaction([
+      prisma.message.create({
+        data: {
+          conversationId,
+          sender: "USER",
           content,
-        );
-      }
-    } else if (destination) {
-      await wppConnectService.sendMessageAuto(companyId, destination, content);
-    }
-
-    const message = await prisma.message.create({
-      data: {
-        conversationId,
-        sender: "USER",
-        content,
-      },
-    });
-
-    await prisma.conversation.update({
-      where: { id: conversationId },
-      data: { updatedAt: new Date() },
-    });
+          externalId,
+          mediaType: image ? "image" : null,
+          mediaUrl: image ? imageUrl : null,
+        },
+      }),
+      prisma.conversation.update({
+        where: { id: conversationId, companyId },
+        data: { updatedAt: new Date() },
+      }),
+    ]);
+    emitMessageCreated(updated);
 
     return message;
   }

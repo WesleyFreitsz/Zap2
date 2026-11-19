@@ -29,7 +29,8 @@ test("parseia texto e mídia do WhatsApp, aceita from_user_id e ignora statuses"
     ],
     messages: [
       { id: "wa-1", from: "5511999999999", timestamp: "1700000000", type: "text", text: { body: "Olá" } },
-      { id: "wa-2", from_user_id: "user-2", timestamp: "1700000000", type: "image", image: { id: "media" } },
+      { id: "wa-2", from_user_id: "user-2", timestamp: "1700000000", type: "document", document: { id: "media", mime_type: "application/pdf", filename: "pedido.pdf", caption: "Pedido" } },
+      { id: "wa-4", from_user_id: "user-2", timestamp: "1700000000", type: "sticker", sticker: { id: "sticker", mime_type: "image/webp" } },
       { id: "wa-3", type: "text" },
     ],
     statuses: [{ id: "sent-1", status: "delivered" }],
@@ -41,7 +42,16 @@ test("parseia texto e mídia do WhatsApp, aceita from_user_id e ignora statuses"
 
   assert.deepEqual(parseMetaWebhook(wrap(value)), [
     { channel: "WHATSAPP", accountId: "phone", contactRemoteId: "5511999999999", contactName: "Ana", externalId: "wa-1", content: "Olá", sentAt: new Date(1700000000000) },
-    { channel: "WHATSAPP", accountId: "phone", contactRemoteId: "user-2", contactName: "-", externalId: "wa-2", content: "[image]", sentAt: new Date(1700000000000) },
+    {
+      channel: "WHATSAPP", accountId: "phone", contactRemoteId: "user-2", contactName: "-", externalId: "wa-2",
+      content: "Pedido", sentAt: new Date(1700000000000),
+      media: { kind: "document", source: { type: "whatsapp_media_id", id: "media" }, mimeType: "application/pdf", fileName: "pedido.pdf", caption: "Pedido" },
+    },
+    {
+      channel: "WHATSAPP", accountId: "phone", contactRemoteId: "user-2", contactName: "-", externalId: "wa-4",
+      content: "[figurinha]", sentAt: new Date(1700000000000),
+      media: { kind: "sticker", source: { type: "whatsapp_media_id", id: "sticker" }, mimeType: "image/webp", fileName: undefined, caption: undefined },
+    },
   ]);
   assert.deepEqual(parseMetaWebhook(wrap({ metadata: value.metadata, statuses: value.statuses })), []);
 });
@@ -49,16 +59,19 @@ test("parseia texto e mídia do WhatsApp, aceita from_user_id e ignora statuses"
 for (const [object, channel] of [["page", "FACEBOOK"], ["instagram", "INSTAGRAM"]] as const) {
   test(`parseia ${channel} e ignora is_echo e eventos sem mensagem`, () => {
     const event = { sender: { id: "contact" }, recipient: { id: "account" }, timestamp: 1700000000000 };
+    const url = "https://media.fbcdn.net/pedido.pdf";
     const messages = parseMetaWebhook({ object, entry: [{ id: "account", messaging: [
       { ...event, message: { mid: "text-1", text: "Oi" } },
-      { ...event, message: { mid: "media-1", attachments: [{ type: "audio" }] } },
+      { ...event, message: { mid: "media-1", text: "Pedido", attachments: [{ type: "file", payload: { url } }, { type: "image", payload: { url: "https://media.fbcdn.net/foto.png" } }] } },
+      { ...event, message: { mid: "media-2", attachments: [{ type: "audio" }] } },
       { ...event, message: { mid: "echo", text: "Oi", is_echo: true } },
       { ...event, read: { watermark: 1700000000000 } },
     ] }] });
     const expected = { channel, accountId: "account", contactRemoteId: "contact", sentAt: new Date(event.timestamp) };
     assert.deepEqual(messages, [
       { ...expected, externalId: "text-1", content: "Oi" },
-      { ...expected, externalId: "media-1", content: "[audio]" },
+      { ...expected, externalId: "media-1", content: "Pedido", media: { kind: "document", source: { type: "url", url } } },
+      { ...expected, externalId: "media-2", content: "[áudio]" },
     ]);
   });
 }

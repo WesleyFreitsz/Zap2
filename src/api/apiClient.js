@@ -224,6 +224,21 @@ export const aiConfigApi = {
   save: (data) => apiClient.put("/ai-config", data).then((r) => r.data.data),
 };
 
+export const quickRepliesApi = {
+  list: () => apiClient.get("/quick-replies").then((r) => r.data.data),
+  create: (data) => apiClient.post("/quick-replies", data).then((r) => r.data.data),
+  update: (id, data) => apiClient.put(`/quick-replies/${id}`, data).then((r) => r.data.data),
+  delete: (id) => apiClient.delete(`/quick-replies/${id}`),
+};
+
+export function quickRepliesQuery(companyId) {
+  return {
+    queryKey: ["quick-replies", companyId],
+    queryFn: quickRepliesApi.list,
+    staleTime: 5 * 60 * 1000,
+  };
+}
+
 // ============ TAGS ============
 export const tagsApi = {
   list: () => apiClient.get("/tags").then((r) => r.data.data),

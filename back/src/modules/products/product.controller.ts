@@ -86,12 +86,14 @@ export class ProductController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const companyId = req.user!.companyId!;
+      const { companyId, userId, role } = req.user!;
       const { productId, conversationId, customMessage } = req.body;
       const result = await productService.sendToChat(
         productId,
         conversationId,
-        companyId,
+        companyId!,
+        userId,
+        role,
         customMessage,
       );
       res.status(201).json({ status: "success", data: result });

@@ -1,11 +1,15 @@
+import { rm } from "node:fs/promises";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { env } from "../../config/env";
 import prisma from "../../config/prisma";
 import { emitMessageCreated } from "../../realtime";
 import { decryptSecret } from "../../utils/crypto";
+import { logger } from "../../utils/logger";
+import { saveMediaBuffer } from "../../utils/media";
 import { graphRequest } from "../meta/meta-graph.client";
-import type { InboundMessage } from "../meta/meta-webhook";
+import { downloadInboundMedia } from "../meta/meta-media";
+import type { InboundMedia, InboundMessage } from "../meta/meta-webhook";
 import { UserService } from "../users/user.service";
 
 const userService = new UserService();
@@ -36,6 +40,41 @@ async function findContactName(
   }
 }
 
+async function saveInboundMedia(media: InboundMedia, accessTokenEncrypted: string | null) {
+  try {
+    const token = media.source.type === "whatsapp_media_id" && accessTokenEncrypted
+      ? decryptSecret(accessTokenEncrypted, env.TOKEN_ENCRYPTION_KEY)
+      : undefined;
+    const { buffer, mimeType, fileName } = await downloadInboundMedia(media, token);
+    const saved = await saveMediaBuffer({
+      buffer,
+      directory: "chat-media",
+      mimeType: mimeType === "image/svg+xml" ? "application/octet-stream" : mimeType,
+    });
+    return {
+      absolutePath: saved.absolutePath,
+      fields: {
+        mediaType: media.kind,
+        mediaUrl: saved.url,
+        mimeType,
+        fileName: fileName ?? saved.fileName,
+        fileSize: saved.size,
+      },
+    };
+  } catch {
+    logger.warn("[Meta] Falha ao salvar a mídia recebida", { kind: media.kind, source: media.source.type });
+  }
+}
+
+async function removeUnusedMedia(absolutePath?: string) {
+  if (!absolutePath) return;
+  try {
+    await rm(absolutePath, { force: true });
+  } catch {
+    logger.warn("[Meta] Falha ao remover mídia sem mensagem");
+  }
+}
+
 export async function ingestInbound(inbound: InboundMessage): Promise<void> {
   const { channel, accountId, contactRemoteId, externalId, sentAt, content } = inbound;
   const integration = await prisma.integration.findFirst({
@@ -57,9 +96,11 @@ export async function ingestInbound(inbound: InboundMessage): Promise<void> {
     contactName ||= await findContactName(inbound, integration.accessTokenEncrypted);
     assignedToId = await userService.getNextEmployeeRoundRobin(companyId);
   }
+  const media = inbound.media && await saveInboundMedia(inbound.media, integration.accessTokenEncrypted);
 
+  let updated;
   try {
-    const updated = await prisma.$transaction(async (tx) => {
+    updated = await prisma.$transaction(async (tx) => {
       const active = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM integrations
         WHERE id = ${integrationId} AND "companyId" = ${companyId} AND status = 'ACTIVE'
@@ -83,14 +124,18 @@ export async function ingestInbound(inbound: InboundMessage): Promise<void> {
       }
 
       await tx.message.create({
-        data: { conversationId: conversation.id, externalId, content, sender: "CLIENT", createdAt: sentAt },
+        data: { conversationId: conversation.id, externalId, content, sender: "CLIENT", createdAt: sentAt, ...media?.fields },
       });
       return tx.conversation.update({ where: { id: conversation.id, companyId }, data: { updatedAt: new Date() } });
     });
-    if (updated) emitMessageCreated(updated);
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" &&
-      await prisma.message.findUnique({ where: { externalId }, select: { id: true } })) return;
+      await prisma.message.findUnique({ where: { externalId }, select: { id: true } })) {
+      await removeUnusedMedia(media?.absolutePath);
+      return;
+    }
     throw error;
   }
+  if (updated) emitMessageCreated(updated);
+  else await removeUnusedMedia(media?.absolutePath);
 }

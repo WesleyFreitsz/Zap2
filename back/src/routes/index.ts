@@ -17,6 +17,7 @@ import adminDashboardRoutes from "../modules/admin-dashboard/admin-dashboard.rou
 import planRoutes from "../modules/plans/plan.routes";
 import metaWebhookRoutes from "../modules/meta/meta-webhook.routes";
 import channelRoutes from "../modules/channels/channels.routes";
+import quickReplyRoutes from "../modules/quick-replies/quick-reply.routes";
 
 const router = Router();
 
@@ -39,5 +40,6 @@ router.use("/invitations", invitationRoutes);
 router.use("/billing", billingRoutes);
 router.use("/admin", adminDashboardRoutes);
 router.use("/plans", planRoutes);
+router.use("/quick-replies", quickReplyRoutes);
 
 export default router;

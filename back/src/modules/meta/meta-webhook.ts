@@ -2,6 +2,24 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { IntegrationType } from "@prisma/client";
 import { z } from "zod";
 
+const mediaKindSchema = z.enum(["image", "audio", "video", "document", "sticker"]);
+type MediaKind = z.infer<typeof mediaKindSchema>;
+export type InboundMedia = {
+  kind: MediaKind;
+  source: { type: "whatsapp_media_id"; id: string } | { type: "url"; url: string };
+  mimeType?: string;
+  fileName?: string;
+  caption?: string;
+};
+
+const mediaPlaceholders: Record<MediaKind, string> = {
+  image: "[imagem]",
+  audio: "[áudio]",
+  video: "[vídeo]",
+  document: "[documento]",
+  sticker: "[figurinha]",
+};
+
 export type InboundMessage = {
   channel: IntegrationType;
   accountId: string;
@@ -10,6 +28,7 @@ export type InboundMessage = {
   externalId: string;
   content: string;
   sentAt: Date;
+  media?: InboundMedia;
 };
 
 export function verifyWebhookChallenge(query: Record<string, unknown>, token: string): string | undefined {
@@ -47,6 +66,12 @@ const whatsappMessageSchema = z.object({
   timestamp: z.string().regex(/^\d+$/),
   type: id,
   text: z.object({ body: id }).optional(),
+}).passthrough();
+const whatsappMediaSchema = z.object({
+  id,
+  mime_type: id.optional(),
+  filename: id.optional(),
+  caption: z.string().optional(),
 });
 const messagingEntrySchema = z.object({ id, messaging: z.array(z.unknown()) });
 const messagingEventSchema = z.object({
@@ -56,9 +81,12 @@ const messagingEventSchema = z.object({
     mid: id,
     text: id.optional(),
     is_echo: z.boolean().optional(),
-    attachments: z.array(z.object({ type: id })).optional(),
+    attachments: z.array(z.unknown()).optional(),
   }),
 });
+const attachmentSchema = z.object({ type: id, payload: z.unknown() });
+const attachmentKindSchema = z.enum(["image", "audio", "video", "file"]);
+const attachmentPayloadSchema = z.object({ url: id });
 
 function parseWhatsAppEntry(entry: unknown): InboundMessage[] {
   const result = whatsappEntrySchema.safeParse(entry);
@@ -79,7 +107,18 @@ function parseWhatsAppEntry(entry: unknown): InboundMessage[] {
       const data = parsedMessage.data;
       const contactRemoteId = data.from ?? data.from_user_id;
       const sentAt = new Date(Number(data.timestamp) * 1_000);
-      const content = data.type === "text" ? data.text?.body : `[${data.type}]`;
+      const kind = mediaKindSchema.safeParse(data.type);
+      const asset = kind.success ? whatsappMediaSchema.safeParse(data[kind.data]) : undefined;
+      const media: InboundMedia | undefined = kind.success && asset?.success ? {
+        kind: kind.data,
+        source: { type: "whatsapp_media_id", id: asset.data.id },
+        mimeType: asset.data.mime_type,
+        fileName: asset.data.filename,
+        caption: asset.data.caption,
+      } : undefined;
+      const content = media?.caption || data.text?.body || (
+        kind.success ? mediaPlaceholders[kind.data] : data.type !== "text" ? `[${data.type}]` : undefined
+      );
       if (!contactRemoteId || !content || Number.isNaN(sentAt.getTime())) return [];
       const contact = profiles.find(({ wa_id, user_id }) => wa_id === contactRemoteId || user_id === contactRemoteId);
       return [{
@@ -90,6 +129,7 @@ function parseWhatsAppEntry(entry: unknown): InboundMessage[] {
         externalId: data.id,
         content,
         sentAt,
+        ...(media && { media }),
       }];
     });
   });
@@ -105,13 +145,23 @@ function parseMessagingEntry(entry: unknown, channel: "FACEBOOK" | "INSTAGRAM"):
     const { sender, timestamp, message } = parsed.data;
     const sentAt = new Date(timestamp);
     if (Number.isNaN(sentAt.getTime())) return [];
+    const attachment = attachmentSchema.safeParse(message.attachments?.[0]);
+    const type = attachment.data?.type;
+    const kind = attachmentKindSchema.safeParse(type);
+    const mediaKind = kind.data === "file" ? "document" : kind.data;
+    const payload = attachmentPayloadSchema.safeParse(attachment.data?.payload);
+    const media: InboundMedia | undefined = mediaKind && payload.success ? {
+      kind: mediaKind,
+      source: { type: "url", url: payload.data.url },
+    } : undefined;
     return [{
       channel,
       accountId: result.data.id,
       contactRemoteId: sender.id,
       externalId: message.mid,
-      content: message.text ?? `[${message.attachments?.[0]?.type ?? "unsupported"}]`,
+      content: message.text ?? (mediaKind ? mediaPlaceholders[mediaKind] : `[${type ?? "unsupported"}]`),
       sentAt,
+      ...(media && { media }),
     }];
   });
 }

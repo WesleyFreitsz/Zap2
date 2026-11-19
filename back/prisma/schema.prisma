@@ -133,8 +133,22 @@ model Company {
   leads             Lead[]
   invitations       Invitation[]
   subscription      Subscription?
+  quickReplies      QuickReply[]
 
   @@map("companies")
+}
+
+model QuickReply {
+  id        String   @id @default(uuid())
+  companyId String
+  shortcut  String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, shortcut])
+  @@map("quick_replies")
 }
 
 model User {
@@ -321,7 +335,9 @@ model Integration {
 model Lead {
   id           String          @id @default(uuid())
   name         String
-  phone        String
+  phone        String?
+  channel      IntegrationType @default(WHATSAPP)
+  contactRemoteId String?
   avatarUrl    String?
   email        String?
   temperature  LeadTemperature @default(COLD)
@@ -338,6 +354,7 @@ model Lead {
   tags          LeadTag[]
 
   @@unique([phone, companyId])
+  @@unique([companyId, channel, contactRemoteId])
   @@map("leads")
 }
 
