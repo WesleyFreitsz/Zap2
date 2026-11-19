@@ -16,9 +16,9 @@ import {
 const ThemeContext = createContext();
 
 const DEFAULT_BRANDING = {
-  platformName: "ZapAI",
-  primaryColor: "#22c55e",
-  secondaryColor: "#f59e0b",
+  platformName: "Zap2",
+  primaryColor: "#4c216b",
+  secondaryColor: "#f9692a",
   logoUrl: "",
 };
 
@@ -58,9 +58,9 @@ export const ThemeProvider = ({ children }) => {
   const [darkMode, setDarkMode] = useState(() => {
     try {
       const stored = localStorage.getItem("darkMode");
-      return stored == null ? true : stored === "true";
+      return stored === "true";
     } catch {
-      return true;
+      return false;
     }
   });
 

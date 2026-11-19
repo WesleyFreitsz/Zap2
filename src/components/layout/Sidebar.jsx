@@ -248,7 +248,7 @@ export default function Sidebar({ collapsed, onToggle }) {
         )}
         {!collapsed && (
           <span className="text-lg font-bold tracking-tight">
-            {branding.platformName || "ZapAI"}
+            {branding.platformName || "Zap2"}
           </span>
         )}
       </div>

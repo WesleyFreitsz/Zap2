@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/AuthContext";
+import { useTheme } from "@/lib/ThemeContext";
 import {
   Send,
   Bot,
@@ -28,6 +29,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
   const scrollRef = useRef(null);
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { branding } = useTheme();
   const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
 
   useEffect(() => {
@@ -102,7 +104,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
           <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center mx-auto">
             <Bot className="w-8 h-8 text-primary" />
           </div>
-          <p className="text-lg font-semibold">ZapAI</p>
+          <p className="text-lg font-semibold">{branding.platformName}</p>
           <p className="text-sm text-muted-foreground">
             Selecione uma conversa para começar
           </p>

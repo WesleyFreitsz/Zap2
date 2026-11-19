@@ -5,9 +5,22 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        inter: ['Inter', 'sans-serif'],
+        sans: ['Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
+      letterSpacing: {
+        tight: '-0.04em',
+      },
+      boxShadow: {
+        card: '0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 0 0 1px hsl(var(--edge) / 0.07)',
+        button: '0 1px 2px 0 rgba(0, 0, 0, 0.2)',
+        'button-light': '0 1px 2px 0 rgba(0, 0, 0, 0.1), 0 0 0 1px hsl(var(--edge) / 0.1)',
+        menu: '0 0 0 1px hsl(var(--edge) / 0.1), 0 4px 4px 0 rgba(0, 0, 0, 0.08), 0 8px 8px 0 rgba(0, 0, 0, 0.08)',
+        field: '0 1px 2px 0 rgba(0, 0, 0, 0.1), 0 0 0 1px hsl(var(--edge) / 0.1)',
+        'field-focus': '0 1px 2px 0 rgba(0, 0, 0, 0.1), 0 0 0 1px hsl(var(--primary)), 0 0 0 2px hsl(var(--background)), 0 0 0 3px hsl(var(--primary) / 0.2)',
+        'focus-ring': '0 0 0 2px hsl(var(--background)), 0 0 0 3px hsl(var(--primary) / 0.3)',
       },
       borderRadius: {
+        xl: 'calc(var(--radius) + 2px)',
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',

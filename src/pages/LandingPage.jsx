@@ -75,7 +75,7 @@ export default function LandingPage() {
             <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
               <Zap className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold tracking-tight">ZapAI</span>
+            <span className="text-xl font-bold tracking-tight">Zap2</span>
           </div>
           <nav className="hidden md:flex items-center gap-8">
             <a
@@ -383,10 +383,10 @@ export default function LandingPage() {
             <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
               <Zap className="w-3.5 h-3.5 text-primary-foreground" />
             </div>
-            <span className="font-bold">ZapAI</span>
+            <span className="font-bold">Zap2</span>
           </div>
           <p className="text-xs text-muted-foreground">
-            &copy; {new Date().getFullYear()} ZapAI. Todos os direitos
+            &copy; {new Date().getFullYear()} Zap2. Todos os direitos
             reservados.
           </p>
         </div>

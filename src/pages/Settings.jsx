@@ -560,7 +560,7 @@ export default function Settings() {
                     </div>
                   )}
                   <span className="text-lg font-bold">
-                    {branding.platformName || "ZapAI"}
+                    {branding.platformName || "Zap2"}
                   </span>
                 </div>
               </div>
