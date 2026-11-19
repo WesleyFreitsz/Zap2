@@ -6,7 +6,7 @@ import {
   Bot,
   Settings,
   BarChart3,
-  Smartphone,
+  Plug,
   Zap,
   LogOut,
   ChevronLeft,
@@ -102,7 +102,7 @@ const clientNav = [
     roles: ["ADMIN", "EMPLOYEE"],
   },
   { icon: Bot, label: "Config IA", path: "/ai-config", roles: ["ADMIN"] },
-  { icon: Smartphone, label: "WhatsApp", path: "/whatsapp", roles: ["ADMIN"] },
+  { icon: Plug, label: "Canais", path: "/channels", roles: ["ADMIN"] },
   { icon: Users, label: "Funcionários", path: "/employees", roles: ["ADMIN"] },
   {
     icon: CreditCard,

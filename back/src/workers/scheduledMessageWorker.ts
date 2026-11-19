@@ -1,8 +1,9 @@
 import cron from "node-cron";
 import prisma from "../config/prisma";
-import { wppConnectService } from "../modules/integrations/wppconnect/wppconnect.service";
+import { sendText } from "../modules/channels/channel-sender";
 import { emitMessageCreated } from "../realtime";
 import { logger } from "../utils/logger";
+import { AppError } from "../utils/AppError";
 
 export default class ScheduledMessageWorker {
   private isRunning = false;
@@ -61,17 +62,8 @@ export default class ScheduledMessageWorker {
         throw new Error(failureMessage);
       }
 
-      if (conversation.channel !== "WHATSAPP") {
-        failureMessage = "Canal não suportado";
-        throw new Error(failureMessage);
-      }
-
-      failureMessage = "Falha no envio pelo WhatsApp";
-      const { externalId } = await wppConnectService.sendMessageAuto(
-        companyId,
-        conversation.contactRemoteId || conversation.contactPhone,
-        message.content,
-      );
+      failureMessage = "Falha no envio da mensagem";
+      const { externalId } = await sendText(conversation, message.content);
       const sentAt = new Date();
 
       failureMessage = "Mensagem enviada, mas houve falha ao registrar o envio";
@@ -102,7 +94,7 @@ export default class ScheduledMessageWorker {
       });
       await prisma.scheduledMessage.updateMany({
         where: claimed,
-        data: { status: "FAILED", error: failureMessage },
+        data: { status: "FAILED", error: error instanceof AppError ? error.message : failureMessage },
       });
     }
   }

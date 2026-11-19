@@ -42,4 +42,13 @@ export const env = {
 
   GROQ_API_KEY: process.env.GROQ_API_KEY || "",
   GROQ_MODEL: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+
+  META_APP_ID: process.env.META_APP_ID || "",
+  META_APP_SECRET: process.env.META_APP_SECRET || "",
+  META_WEBHOOK_VERIFY_TOKEN: process.env.META_WEBHOOK_VERIFY_TOKEN || "",
+  META_GRAPH_VERSION: process.env.META_GRAPH_VERSION || "v27.0",
+  TOKEN_ENCRYPTION_KEY: process.env.TOKEN_ENCRYPTION_KEY || "",
+  META_ALLOW_MANUAL_CONNECT:
+    (process.env.NODE_ENV || "development") === "development" &&
+    process.env.META_ALLOW_MANUAL_CONNECT === "true",
 };

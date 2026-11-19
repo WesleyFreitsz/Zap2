@@ -16,8 +16,12 @@ import invitationRoutes from "../modules/invitations/invitation.routes";
 import billingRoutes from "../modules/billing/billing.routes";
 import adminDashboardRoutes from "../modules/admin-dashboard/admin-dashboard.routes";
 import planRoutes from "../modules/plans/plan.routes";
+import metaWebhookRoutes from "../modules/meta/meta-webhook.routes";
+import channelRoutes from "../modules/channels/channels.routes";
 
 const router = Router();
+
+router.use("/webhooks/meta", metaWebhookRoutes);
 
 router.use("/auth", authRoutes);
 router.use("/users", userRoutes);
@@ -28,6 +32,7 @@ router.use("/schedule", scheduleRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/integrations", integrationRoutes);
 router.use("/integrations/whatsapp", whatsappRoutes);
+router.use("/channels", channelRoutes);
 router.use("/companies", companyRoutes);
 router.use("/ai-config", aiConfigRoutes);
 router.use("/tags", tagRoutes);

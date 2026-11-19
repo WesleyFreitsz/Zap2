@@ -169,6 +169,20 @@ export const integrationsApi = {
   delete: (id) => apiClient.delete(`/integrations/${id}`).then((r) => r.data),
 };
 
+export const channelsApi = {
+  list: () => apiClient.get("/channels").then((r) => r.data.data),
+  metaConfig: () => apiClient.get("/channels/meta/config").then((r) => r.data.data),
+  discoverPages: (code) =>
+    apiClient.post("/channels/meta/pages/discover", { code }).then((r) => r.data.data),
+  connectPages: (data) =>
+    apiClient.post("/channels/meta/pages/connect", data).then((r) => r.data.data),
+  connectWhatsAppCloud: (data) =>
+    apiClient.post("/channels/whatsapp-cloud/connect", data).then((r) => r.data.data),
+  connectManual: (data) =>
+    apiClient.post("/channels/meta/manual", data).then((r) => r.data.data),
+  remove: (id) => apiClient.delete(`/channels/${id}`),
+};
+
 // ============ WHATSAPP (multi-session) ============
 export const whatsappApi = {
   // List all sessions for current company

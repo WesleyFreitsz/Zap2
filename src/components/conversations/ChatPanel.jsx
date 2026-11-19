@@ -16,6 +16,7 @@ import {
 import ChatBubble from "./ChatBubble";
 import { toast } from "sonner";
 import SendProductModal from "@/components/products/SendProductModal";
+import ChannelIcon, { getConversationName, getConversationPhone } from "@/components/channels/ChannelIcon";
 
 export default function ChatPanel({ conversation, messages = [] }) {
   const [input, setInput] = useState("");
@@ -96,13 +97,14 @@ export default function ChatPanel({ conversation, messages = [] }) {
         <div className="flex items-center gap-3">
           <Avatar className="h-9 w-9">
             <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
-              {conversation.displayName?.charAt(0)?.toUpperCase() || "?"}
+              {getConversationName(conversation)?.charAt(0)?.toUpperCase() || "?"}
             </AvatarFallback>
           </Avatar>
           <div>
-            <p className="text-sm font-semibold">{conversation.displayName}</p>
-            <p className="text-xs text-muted-foreground">
-              {conversation.displayPhone || conversation.contactPhone}
+            <p className="text-sm font-semibold">{getConversationName(conversation)}</p>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <ChannelIcon type={conversation.channel} className="h-3.5 w-3.5 shrink-0" />
+              {getConversationPhone(conversation)}
             </p>
             {isAdmin && conversation.assignedTo?.name && (
               <p className="text-[11px] text-muted-foreground">

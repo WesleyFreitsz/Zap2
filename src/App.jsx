@@ -31,7 +31,7 @@ import Conversations from "./pages/Conversations";
 
 import AIConfig from "./pages/AIConfig";
 
-import WhatsAppSettings from "./pages/WhatsAppSettings";
+import Channels from "./pages/Channels";
 
 import Analytics from "./pages/Analytics";
 
@@ -289,13 +289,13 @@ function App() {
 
                 <Route
 
-                  path="/whatsapp"
+                  path="/channels"
 
                   element={
 
                     <RoleRoute allowed={["ADMIN"]}>
 
-                      <WhatsAppSettings />
+                      <Channels />
 
                     </RoleRoute>
 
@@ -305,6 +305,10 @@ function App() {
 
                 <Route
 
+                  path="/whatsapp"
+                  element={<Navigate to="/channels" replace />}
+                />
+                <Route
                   path="/employees"
 
                   element={

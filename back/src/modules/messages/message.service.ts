@@ -3,6 +3,7 @@ import { emitMessageCreated } from "../../realtime";
 import { AppError } from "../../utils/AppError";
 import { logger } from "../../utils/logger";
 import { wppConnectService } from "../integrations/wppconnect/wppconnect.service";
+import { sendText } from "../channels/channel-sender";
 import { AiConfigService } from "../ai-config/aiConfig.service";
 import { createChatCompletion } from "../ai-config/groq.client";
 import { SendMessageInput, SuggestReplyInput } from "./message.schema";
@@ -29,25 +30,7 @@ export class MessageService {
       throw new AppError("Access denied to this conversation", 403);
     }
 
-    let externalId: string | null = null;
-    const destination =
-      conversation.contactRemoteId || conversation.contactPhone;
-
-    if (conversation.channel === "WHATSAPP") {
-      try {
-        const result = await wppConnectService.sendMessageAuto(
-          companyId,
-          destination,
-          data.content,
-        );
-        externalId = result.externalId;
-      } catch (error) {
-        logger.error(
-          `[MessageService] Failed to send via WPPConnect: ${(error as Error).message}`,
-        );
-        throw new AppError("Failed to send WhatsApp message", 500);
-      }
-    }
+    const { externalId } = await sendText(conversation, data.content);
 
     const message = await prisma.message.create({
       data: {

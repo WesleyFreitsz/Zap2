@@ -45,6 +45,11 @@ enum IntegrationStatus {
   INACTIVE
 }
 
+enum ChannelProvider {
+  WPPCONNECT
+  META
+}
+
 enum ConnectionStatus {
   CONNECTED
   DISCONNECTED
@@ -163,6 +168,7 @@ model Conversation {
   assignedToId String?
   companyId    String
   leadId       String?
+  integrationId String?
   channel      IntegrationType    @default(WHATSAPP)
   status       ConversationStatus @default(OPEN)
   createdAt    DateTime           @default(now())
@@ -171,10 +177,12 @@ model Conversation {
   assignedTo        User?              @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   lead              Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  integration       Integration?       @relation(fields: [integrationId], references: [id], onDelete: SetNull)
   messages          Message[]
   scheduledMessages ScheduledMessage[]
   tags              ConversationTag[]
 
+  @@index([companyId, channel, contactRemoteId])
   @@map("conversations")
 }
 
@@ -291,6 +299,11 @@ model ConversationTag {
 model Integration {
   id               String            @id @default(uuid())
   type             IntegrationType
+  provider         ChannelProvider   @default(WPPCONNECT)
+  externalAccountId String?
+  metaPageId       String?
+  label            String?
+  accessTokenEncrypted String?
   token            String
   companyId        String
   status           IntegrationStatus @default(ACTIVE)
@@ -303,9 +316,11 @@ model Integration {
   updatedAt        DateTime          @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
 
   createdAt DateTime @default(now())
 
+  @@unique([type, externalAccountId])
   @@map("integrations")
 }
 

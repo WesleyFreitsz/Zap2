@@ -209,7 +209,7 @@ export class WppConnectService {
   // ─── List Sessions ──────────────────────────────────────────
   async listSessions(companyId: string) {
     const integrations = await prisma.integration.findMany({
-      where: { companyId, type: "WHATSAPP" },
+      where: { companyId, type: "WHATSAPP", provider: "WPPCONNECT" },
       orderBy: { createdAt: "desc" },
     });
 
@@ -467,6 +467,7 @@ export class WppConnectService {
       const integrations = await prisma.integration.findMany({
         where: {
           type: "WHATSAPP",
+          provider: "WPPCONNECT",
           status: "ACTIVE",
           connectionStatus: "CONNECTED",
         },
@@ -631,6 +632,7 @@ export class WppConnectService {
             companyId,
             status: { notIn: ["CLOSED"] },
             channel: "WHATSAPP",
+            NOT: { integration: { is: { provider: "META" } } },
             OR: [
               ...phoneCandidates.map((candidate) => ({
                 contactPhone: candidate,
@@ -924,7 +926,7 @@ export class WppConnectService {
   private async enforcePlanLimit(companyId: string): Promise<void> {
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      include: { _count: { select: { integrations: true } } },
+      include: { _count: { select: { integrations: { where: { type: "WHATSAPP" } } } } },
     });
 
     if (!company) throw new AppError("Company not found", 404);
@@ -946,6 +948,7 @@ export class WppConnectService {
       where: {
         companyId,
         type: "WHATSAPP",
+        provider: "WPPCONNECT",
         connectionStatus: "CONNECTED",
         status: "ACTIVE",
       },
@@ -976,7 +979,7 @@ export class WppConnectService {
 
   private async getIntegration(integrationId: string, companyId: string) {
     const integration = await prisma.integration.findFirst({
-      where: { id: integrationId, companyId },
+      where: { id: integrationId, companyId, type: "WHATSAPP", provider: "WPPCONNECT" },
     });
 
     if (!integration) {
