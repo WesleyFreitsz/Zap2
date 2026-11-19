@@ -41,11 +41,11 @@ export default function Login() {
             </div>
           )}
           <span className="text-3xl font-bold tracking-tight">
-            {branding.platformName || "ZapAI"}
+            {branding.platformName || "Zap2"}
           </span>
         </div>
 
-        <Card className="shadow-xl border-border/50">
+        <Card>
           <CardHeader className="pb-4 text-center">
             <CardTitle className="text-xl">Entrar na plataforma</CardTitle>
           </CardHeader>

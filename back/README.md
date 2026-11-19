@@ -7,7 +7,6 @@ Backend completo para plataforma SaaS de multiatendimento omnichannel (WhatsApp,
 - **Runtime**: Node.js + TypeScript
 - **Framework**: Express
 - **Database**: PostgreSQL + Prisma ORM
-- **Cache/Filas**: Redis + BullMQ
 - **Auth**: JWT + Refresh Token
 - **Validação**: Zod
 - **Logs**: Winston
@@ -16,7 +15,7 @@ Backend completo para plataforma SaaS de multiatendimento omnichannel (WhatsApp,
 
 ```
 src/
-├── config/          # Configurações (env, prisma, redis)
+├── config/          # Configurações (env, prisma)
 ├── middlewares/      # Auth, authorize, subscription, validate, errorHandler
 ├── modules/
 │   ├── auth/        # Registro, login, refresh token
@@ -28,10 +27,9 @@ src/
 │   ├── dashboard/   # Overview e ranking
 │   ├── integrations/# WhatsApp, Instagram, Facebook
 │   ├── companies/   # Gerenciamento de empresas (SUPER_ADMIN)
-│   └── webhook/     # Webhooks para receber mensagens
 ├── routes/          # Índice de rotas
 ├── utils/           # Logger, AppError
-├── workers/         # BullMQ workers
+├── workers/         # Processamento de mensagens agendadas
 ├── app.ts           # Express app setup
 └── server.ts        # Entry point
 ```
@@ -40,64 +38,56 @@ src/
 
 ### Pré-requisitos
 
-- Node.js 18+
-- PostgreSQL
-- Redis
+- Node.js 22+
+- Docker (para o PostgreSQL local)
 
-### 1. Clonar e instalar dependências
-
-```bash
-git clone <repo-url>
-cd omnichannel-saas-backend
-npm install
-```
-
-### 2. Configurar variáveis de ambiente
+### 1. Instalar dependências
 
 ```bash
-cp .env.example .env
-# Edite o .env com suas credenciais
-```
-
-### 3. Criar o banco e rodar migrations
-
-```bash
-npx prisma migrate dev --name init
-```
-
-### 4. Gerar o Prisma Client
-
-```bash
+npm install --ignore-scripts
 npx prisma generate
 ```
 
-### 5. Popular o banco (seed)
+`--ignore-scripts` evita o download do Chromium do puppeteer, que só é necessário para conectar o WhatsApp via WPPConnect.
+
+### 2. Banco e variáveis de ambiente
 
 ```bash
-npm run prisma:seed
+docker compose up -d
+cp .env.example .env
 ```
 
-### 6. Iniciar o servidor
+No `.env`, troque `JWT_SECRET`, `JWT_REFRESH_SECRET` e `ASAAS_WEBHOOK_TOKEN` por valores aleatórios (o servidor não sobe sem os segredos JWT). `GROQ_API_KEY` é necessária para a sugestão de resposta.
+
+### 3. Migrations e dados
+
+```bash
+npx prisma migrate deploy
+npx tsx --env-file=.env prisma/seed.ts   # super admin e planos
+npm run prisma:seed:dev                  # empresa de teste com conversas, leads e produtos
+```
+
+### 4. Iniciar o servidor
 
 ```bash
 npm run dev
 ```
 
-### 7. Iniciar o worker (em outro terminal)
+O processo do servidor executa o envio de mensagens agendadas a cada minuto com node-cron.
+
+### Testes
 
 ```bash
-npm run worker
+npm test
 ```
 
-## Credenciais do Seed
+## Credenciais locais
 
-| Role        | Email                      | Senha    |
-| ----------- | -------------------------- | -------- |
-| SUPER_ADMIN | superadmin@omnichannel.com | super123 |
-| ADMIN       | admin@demo.com             | admin123 |
-| EMPLOYEE    | employee1@demo.com         | emp123   |
-| EMPLOYEE    | employee2@demo.com         | emp123   |
-| EMPLOYEE    | employee3@demo.com         | emp123   |
+| Role        | Email                      | Senha                                  |
+| ----------- | -------------------------- | -------------------------------------- |
+| SUPER_ADMIN | superadmin@omnichannel.com | definida em `prisma/seed.ts`           |
+| ADMIN       | admin@zap2.test            | `DEV_PASSWORD` em `prisma/seed-dev.ts` |
+| EMPLOYEE    | atendente@zap2.test        | `DEV_PASSWORD` em `prisma/seed-dev.ts` |
 
 ## Rotas da API
 
@@ -128,6 +118,7 @@ Base URL: `http://localhost:3000/api`
 
 ### Messages
 
+- `POST /api/messages/suggest-reply` - Sugerir resposta com IA (Groq)
 - `POST /api/messages/send` - Enviar mensagem
 - `GET /api/messages/:conversationId` - Histórico de mensagens
 
@@ -159,7 +150,7 @@ Base URL: `http://localhost:3000/api`
 - `PATCH /api/integrations/:id/toggle` - Ativar/desativar (ADMIN)
 - `DELETE /api/integrations/:id` - Remover integração (ADMIN)
 
-### WhatsApp via Evolution API
+### WhatsApp (WPPConnect)
 
 - `POST /api/integrations/whatsapp/connect` - Criar instância e gerar QR Code (ADMIN)
 - `GET /api/integrations/whatsapp/status` - Status da conexão
@@ -176,34 +167,23 @@ Base URL: `http://localhost:3000/api`
 - `PATCH /api/companies/:id/toggle` - Ativar/desativar empresa
 - `DELETE /api/companies/:id` - Remover empresa
 
-### Webhooks
+## Integração WhatsApp (WPPConnect)
 
-- `POST /api/webhook/evolution/:companyId` - Webhook da Evolution API (WhatsApp)
-- `POST /api/webhook/instagram` - Receber mensagem Instagram
-- `POST /api/webhook/facebook` - Receber mensagem Facebook
-
-## Integração WhatsApp (Evolution API)
-
-### Pré-requisitos
-
-- [Evolution API](https://github.com/EvolutionAPI/evolution-api) rodando (Docker ou local)
-- Configurar `EVOLUTION_API_URL`, `EVOLUTION_API_KEY` e `EVOLUTION_WEBHOOK_BASE_URL` no `.env`
+Conexão pelo WhatsApp Web via [WPPConnect](https://github.com/wppconnect-team/wppconnect), com um Chromium por número conectado.
 
 ### Fluxo de Conexão
 
 1. Admin chama `POST /api/integrations/whatsapp/connect`
-2. Backend cria instância na Evolution API e retorna QR Code (base64)
+2. Backend abre a sessão e retorna o QR Code (base64)
 3. Usuário escaneia o QR Code no WhatsApp
-4. Evolution API envia webhook de `connection.update` → status atualiza para `CONNECTED`
-5. Mensagens recebidas chegam via webhook `messages.upsert` → salvas no banco com round-robin
+4. Mensagens recebidas são salvas no banco e distribuídas por round-robin
 
 ### Funcionalidades
 
-- **QR Code**: gerado automaticamente, atualizado via webhook
 - **Envio de mensagens**: via `POST /api/integrations/whatsapp/send` ou automático ao responder conversa
-- **Reconexão**: `POST /api/integrations/whatsapp/reconnect` gera novo QR se necessário
-- **Desconexão**: `POST /api/integrations/whatsapp/disconnect` encerra sessão
-- **Multi-tenant**: cada empresa tem sua própria instância (`company-{companyId}`)
+- **Reconexão**: `POST /api/integrations/whatsapp/reconnect/:integrationId`
+- **Desconexão**: `POST /api/integrations/whatsapp/disconnect/:integrationId`
+- **Restauração**: sessões salvas são reabertas quando o servidor sobe
 - **Deduplicação**: mensagens com `externalId` duplicado são ignoradas
 
 ## Regras de Negócio
@@ -212,7 +192,5 @@ Base URL: `http://localhost:3000/api`
 2. **Round-robin**: Novos contatos distribuídos automaticamente entre funcionários ativos (persistido em `lastAssignedUserId` na Company)
 3. **Permissões**: SUPER_ADMIN > ADMIN > EMPLOYEE
 4. **Subscription Guard**: Empresas inativas são bloqueadas
-5. **Mensagens Agendadas**: Processadas via BullMQ worker
-6. **Webhooks**: Endpoints para receber mensagens de canais externos
-7. **Evolution API**: Integração real com WhatsApp via QR Code, conexão persistente e envio/recebimento
-8. **Status de Conversa**: OPEN, CLOSED, TRANSFERRED, PENDING, BOT
+5. **Mensagens Agendadas**: Enviadas pelo WhatsApp pelo processo do servidor
+6. **Status de Conversa**: OPEN, CLOSED, TRANSFERRED, PENDING, BOT

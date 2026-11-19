@@ -7,6 +7,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +36,7 @@ import { toast } from "sonner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
 import { useTheme } from "@/lib/ThemeContext";
-import { plansApi, usersApi, whatsappApi } from "@/api/apiClient";
+import { plansApi, quickRepliesApi, quickRepliesQuery, usersApi, whatsappApi } from "@/api/apiClient";
 import {
   formatCurrency,
   getDisplayPlans,
@@ -47,6 +48,144 @@ import {
   sanitizeHexColor,
   sanitizePersonName,
 } from "@/lib/utils";
+
+const emptyQuickReply = { shortcut: "", content: "" };
+
+function QuickRepliesSettings({ companyId }) {
+  const queryClient = useQueryClient();
+  const query = quickRepliesQuery(companyId);
+  const { data: replies = [], isPending, isError } = useQuery(query);
+  const [form, setForm] = useState(emptyQuickReply);
+  const shortcutRef = useRef(null);
+  const saveMutation = useMutation({
+    mutationFn: ({ id, shortcut, content }) =>
+      id
+        ? quickRepliesApi.update(id, { shortcut, content })
+        : quickRepliesApi.create({ shortcut, content }),
+    onSuccess: () => {
+      setForm(emptyQuickReply);
+      return queryClient.invalidateQueries({ queryKey: query.queryKey });
+    },
+    onError: (error) =>
+      toast.error(error.response?.data?.message || "Não foi possível salvar a resposta rápida"),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: quickRepliesApi.delete,
+    onSuccess: (_, id) => {
+      if (form.id === id) setForm(emptyQuickReply);
+      return queryClient.invalidateQueries({ queryKey: query.queryKey });
+    },
+    onError: (error) =>
+      toast.error(error.response?.data?.message || "Não foi possível excluir a resposta rápida"),
+  });
+  const isSaving = saveMutation.isPending || deleteMutation.isPending;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Respostas rápidas</CardTitle>
+        <CardDescription>Digite / no chat para encontrar um atalho.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!isSaving && form.content.trim()) saveMutation.mutate(form);
+          }}
+        >
+          <fieldset disabled={isSaving} className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="quick-reply-shortcut">Atalho</Label>
+              <Input
+                id="quick-reply-shortcut"
+                ref={shortcutRef}
+                value={form.shortcut}
+                onChange={(event) =>
+                  setForm({ ...form, shortcut: event.target.value.toLowerCase() })
+                }
+                placeholder="boas-vindas"
+                title="Use letras minúsculas, números e hífen"
+                aria-describedby="quick-reply-shortcut-help"
+                pattern="[a-z0-9\-]+"
+                maxLength={30}
+                required
+              />
+              <p id="quick-reply-shortcut-help" className="text-xs text-muted-foreground">
+                Use letras minúsculas de a a z, números e hífen.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quick-reply-content">Resposta</Label>
+              <Textarea
+                id="quick-reply-content"
+                value={form.content}
+                onChange={(event) => setForm({ ...form, content: event.target.value })}
+                maxLength={2000}
+                required
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button type="submit" disabled={!form.content.trim()}>
+                {form.id ? "Salvar alterações" : "Criar resposta"}
+              </Button>
+              {form.id && (
+                <Button type="button" variant="outline" onClick={() => setForm(emptyQuickReply)}>
+                  Cancelar edição
+                </Button>
+              )}
+            </div>
+          </fieldset>
+        </form>
+
+        {isPending && <p role="status">Carregando respostas rápidas…</p>}
+        {isError && <p role="alert">Não foi possível carregar as respostas rápidas.</p>}
+        {!isPending && !isError && !replies.length && (
+          <p className="text-sm text-muted-foreground">Nenhuma resposta rápida cadastrada.</p>
+        )}
+        <ul className="divide-y divide-border">
+          {replies.map(({ id, shortcut, content }) => (
+            <li key={id} className="flex flex-wrap items-start justify-between gap-2 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">/{shortcut}</p>
+                <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{content}</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-label={`Editar /${shortcut}`}
+                  disabled={isSaving}
+                  onClick={() => {
+                    setForm({ id, shortcut, content });
+                    shortcutRef.current?.focus();
+                  }}
+                >
+                  Editar
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  aria-label={`Excluir /${shortcut}`}
+                  disabled={isSaving}
+                  onClick={() => {
+                    if (window.confirm(`Excluir a resposta rápida /${shortcut}?`)) {
+                      deleteMutation.mutate(id);
+                    }
+                  }}
+                >
+                  Excluir
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function Settings() {
   const queryClient = useQueryClient();
@@ -65,6 +204,18 @@ export default function Settings() {
   } = useTheme();
   const logoInputRef = useRef(null);
   const [profileForm, setProfileForm] = useState({ name: user?.name || "" });
+  const supportsBrowserNotifications = typeof Notification !== "undefined";
+  const [browserNotifications, setBrowserNotifications] = useState(() => {
+    try {
+      return (
+        supportsBrowserNotifications &&
+        Notification.permission === "granted" &&
+        localStorage.getItem("browserNotifications") === "true"
+      );
+    } catch {
+      return false;
+    }
+  });
 
   const { data: profile } = useQuery({
     queryKey: ["profile", "settings"],
@@ -178,6 +329,27 @@ export default function Settings() {
 
   const handleSaveBranding = () => {
     toast.success("Configurações de branding salvas!");
+  };
+
+  const handleBrowserNotificationsChange = async (enabled) => {
+    if (enabled) {
+      try {
+        if (await Notification.requestPermission() !== "granted") {
+          toast.error("Libere as notificações nas configurações do navegador.");
+          return;
+        }
+      } catch {
+        toast.error("Não foi possível solicitar permissão para notificações.");
+        return;
+      }
+    }
+
+    try {
+      localStorage.setItem("browserNotifications", String(enabled));
+      setBrowserNotifications(enabled);
+    } catch {
+      toast.error("Não foi possível salvar a preferência de notificações.");
+    }
   };
 
   const handleSaveProfile = () => {
@@ -424,11 +596,23 @@ export default function Settings() {
               Testar som
             </Button>
           </div>
+          <div className="flex items-center justify-between gap-4">
+            <Label htmlFor="browser-notifications">Notificações do navegador</Label>
+            <Switch
+              id="browser-notifications"
+              checked={browserNotifications}
+              disabled={!supportsBrowserNotifications}
+              onCheckedChange={handleBrowserNotificationsChange}
+            />
+          </div>
         </CardContent>
       </Card>
 
       {isAdmin && (
         <>
+          {user.role === "ADMIN" && user.companyId && (
+            <QuickRepliesSettings key={user.companyId} companyId={user.companyId} />
+          )}
           {/* White Label */}
           <Card>
             <CardHeader>
@@ -560,7 +744,7 @@ export default function Settings() {
                     </div>
                   )}
                   <span className="text-lg font-bold">
-                    {branding.platformName || "ZapAI"}
+                    {branding.platformName || "Zap2"}
                   </span>
                 </div>
               </div>

@@ -1,28 +1,13 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { leadsApi, usersApi, conversationsApi, tagsApi } from "@/api/apiClient";
+import { format } from "date-fns";
+import { leadsApi, conversationsApi } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Search,
   Plus,
+  Download,
   Pencil,
   Trash2,
   Flame,
@@ -30,12 +15,13 @@ import {
   ThermometerSun,
   CheckCircle2,
   MessageSquare,
-  UserCheck,
-  Tag,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../lib/AuthContext";
-import { digitsOnly, formatPhoneInput, sanitizePersonName } from "@/lib/utils";
+import { downloadCsv, toCsv } from "@/lib/csv";
+import ChannelIcon, { channelLabels } from "@/components/channels/ChannelIcon";
+import LeadFormModal from "@/components/leads/LeadFormModal";
+import { formatPhoneInput } from "@/lib/utils";
 
 const getTagColor = (category) => {
   const colors = {
@@ -81,12 +67,7 @@ export default function Leads() {
   const [search, setSearch] = useState("");
   const [tempFilter, setTempFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [showTagModal, setShowTagModal] = useState(false);
-  const [selectedLeadForTags, setSelectedLeadForTags] = useState(null);
-  const [leadTags, setLeadTags] = useState([]);
   const [showModal, setShowModal] = useState(false);
-  const [showTransferModal, setShowTransferModal] = useState(false);
-  const [selectedLead, setSelectedLead] = useState(null);
   const [editing, setEditing] = useState(null);
 
   const qc = useQueryClient();
@@ -100,17 +81,6 @@ export default function Leads() {
   const { data: leads = [], isLoading } = useQuery({
     queryKey: ["leads", params],
     queryFn: () => leadsApi.list(params),
-  });
-
-  const { data: employees = [] } = useQuery({
-    queryKey: ["employees"],
-    queryFn: () => usersApi.list(),
-    enabled: showTransferModal,
-  });
-
-  const { data: tags = [] } = useQuery({
-    queryKey: ["tags"],
-    queryFn: () => tagsApi.list(),
   });
 
   const deleteMutation = useMutation({
@@ -134,8 +104,8 @@ export default function Leads() {
       qc.invalidateQueries({ queryKey: ["leads"] });
       toast.success("Conversa iniciada com sucesso");
 
-      if (data?.data?.id) {
-        window.location.href = `/conversations/${data.data.id}`;
+      if (data?.id) {
+        window.location.href = `/conversations?contact=${data.id}`;
       }
     },
   });
@@ -143,9 +113,26 @@ export default function Leads() {
   const isAdmin =
     user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
 
+  function exportLeads() {
+    const headers = [
+      "Nome", "Telefone", "E-mail", "Temperatura", "Status", "Responsável", "Tags", "Criado em",
+    ];
+    const rows = leads.map((lead) => [
+      lead.name,
+      lead.phone || channelLabels[lead.channel],
+      lead.email,
+      tempLabels[lead.temperature],
+      statusLabels[lead.status],
+      lead.assignedTo?.name,
+      lead.tags?.map((tag) => tag.name).join(", "),
+      lead.createdAt ? format(new Date(lead.createdAt), "dd/MM/yyyy") : "",
+    ]);
+    downloadCsv(`leads-${format(new Date(), "yyyy-MM-dd")}.csv`, toCsv(headers, rows));
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-6 lg:p-8 space-y-6">
+      <div className="flex flex-wrap items-center justify-between">
         <div className="my-3 mx-4">
           <h1 className="text-2xl font-bold">Leads</h1>
           <p className="text-sm text-muted-foreground">
@@ -153,15 +140,19 @@ export default function Leads() {
           </p>
         </div>
 
-        <Button
-          className="my-3 mx-4"
-          onClick={() => {
-            setEditing(null);
-            setShowModal(true);
-          }}
-        >
-          <Plus className="w-4 h-4" /> Novo Lead
-        </Button>
+        <div className="my-3 mx-4 flex flex-wrap gap-2">
+          <Button variant="outline" disabled={!leads.length} onClick={exportLeads}>
+            <Download className="w-4 h-4" /> Exportar CSV
+          </Button>
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setShowModal(true);
+            }}
+          >
+            <Plus className="w-4 h-4" /> Novo Lead
+          </Button>
+        </div>
       </div>
 
       {/* LISTA */}
@@ -183,14 +174,27 @@ export default function Leads() {
               >
                 <p className="font-semibold">{lead.name}</p>
 
-                <p className="text-xs text-muted-foreground">
-                  {formatPhoneInput(lead.phone)}
-                </p>
+                {lead.phone ? (
+                  <p className="text-xs text-muted-foreground">
+                    {formatPhoneInput(lead.phone)}
+                  </p>
+                ) : (
+                  <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <ChannelIcon type={lead.channel} className="w-3 h-3" />
+                    {channelLabels[lead.channel]}
+                  </p>
+                )}
 
                 <Badge className={tempColors[lead.temperature]}>
                   <TempIcon className="w-3 h-3" />
                   {tempLabels[lead.temperature]}
                 </Badge>
+
+                {lead.assignedTo?.name && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Responsável: {lead.assignedTo.name}
+                  </p>
+                )}
 
                 {/* TAGS */}
                 <div className="flex gap-1 mt-2 flex-wrap">
@@ -207,15 +211,17 @@ export default function Leads() {
                 </div>
 
                 <div className="flex gap-2 mt-3">
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      startConversationMutation.mutate(lead)
-                    }
-                  >
-                    <MessageSquare className="w-3 h-3 mr-1" />
-                    Conversar
-                  </Button>
+                  {lead.phone && (
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        startConversationMutation.mutate(lead)
+                      }
+                    >
+                      <MessageSquare className="w-3 h-3 mr-1" />
+                      Conversar
+                    </Button>
+                  )}
 
                   {isAdmin && (
                     <Button
@@ -242,6 +248,19 @@ export default function Leads() {
             );
           })}
         </div>
+      )}
+
+      {showModal && (
+        <LeadFormModal
+          lead={editing}
+          isAdmin={isAdmin}
+          tempLabels={tempLabels}
+          statusLabels={statusLabels}
+          onClose={() => {
+            setShowModal(false);
+            setEditing(null);
+          }}
+        />
       )}
     </div>
   );

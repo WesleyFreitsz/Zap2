@@ -1,6 +1,9 @@
+import { assertConversationAccess } from "../conversations/conversation-access";
 import { Prisma } from "@prisma/client";
 import prisma from "../../config/prisma";
+import { emitMessageCreated } from "../../realtime";
 import { AppError } from "../../utils/AppError";
+import { sendImage, sendText } from "../channels/channel-sender";
 import { CreateProductInput, UpdateProductInput } from "./product.schema";
 
 export class ProductService {
@@ -51,6 +54,8 @@ export class ProductService {
     productId: string,
     conversationId: string,
     companyId: string,
+    userId: string,
+    role: string,
     customMessage?: string,
   ) {
     const product = await prisma.product.findFirst({
@@ -62,8 +67,9 @@ export class ProductService {
       where: { id: conversationId, companyId },
     });
     if (!conversation) throw new AppError("Conversation not found", 404);
+    assertConversationAccess(conversation, { userId, role });
 
-    const imageUrl = product.imageUrl || product.image;
+    const imageUrl = product.imageUrl;
     const promoPrice = product.promotionalPrice;
     const displayPrice =
       promoPrice && promoPrice < product.price ? promoPrice : product.price;
@@ -72,43 +78,31 @@ export class ProductService {
       customMessage ||
       `📦 *${product.name}*\n${product.description || ""}\n💰 R$ ${displayPrice.toFixed(2)}`;
 
-    const { wppConnectService } =
-      await import("../integrations/wppconnect/wppconnect.service");
-    const destination =
-      conversation.contactRemoteId || conversation.contactPhone;
+    const image = imageUrl
+      ? await sendImage(conversation, { url: imageUrl, caption: content }).catch(() => {
+          // If media fails, fall back to text
+          return null;
+        })
+      : null;
+    const { externalId } = image ?? await sendText(conversation, content);
 
-    if (imageUrl && destination) {
-      try {
-        await wppConnectService.sendMediaAuto(companyId, {
-          number: destination,
-          type: "image",
-          url: imageUrl,
-          caption: content,
-        });
-      } catch {
-        // If media fails, fall back to text
-        await wppConnectService.sendMessageAuto(
-          companyId,
-          destination,
+    const [message, updated] = await prisma.$transaction([
+      prisma.message.create({
+        data: {
+          conversationId,
+          sender: "USER",
           content,
-        );
-      }
-    } else if (destination) {
-      await wppConnectService.sendMessageAuto(companyId, destination, content);
-    }
-
-    const message = await prisma.message.create({
-      data: {
-        conversationId,
-        sender: "USER",
-        content,
-      },
-    });
-
-    await prisma.conversation.update({
-      where: { id: conversationId },
-      data: { updatedAt: new Date() },
-    });
+          externalId,
+          mediaType: image ? "image" : null,
+          mediaUrl: image ? imageUrl : null,
+        },
+      }),
+      prisma.conversation.update({
+        where: { id: conversationId, companyId },
+        data: { updatedAt: new Date() },
+      }),
+    ]);
+    emitMessageCreated(updated);
 
     return message;
   }
@@ -122,8 +116,7 @@ export class ProductService {
       code: data.code || null,
       description: data.description || null,
       price: data.price,
-      image: data.image || null,
-      imageUrl: data.imageUrl || data.image || null,
+      imageUrl: data.imageUrl || null,
       category: data.category || null,
       promotionalPrice: data.promotionalPrice ?? null,
       stock: data.stock ?? 0,
@@ -143,12 +136,7 @@ export class ProductService {
     if (data.description !== undefined)
       mapped.description = data.description || null;
     if (data.price !== undefined) mapped.price = data.price;
-    if (data.image !== undefined) mapped.image = data.image || null;
-    if (data.imageUrl !== undefined)
-      mapped.imageUrl = data.imageUrl || data.image || null;
-    else if (data.image !== undefined) {
-      mapped.imageUrl = data.image || null;
-    }
+    if (data.imageUrl !== undefined) mapped.imageUrl = data.imageUrl || null;
     if (data.category !== undefined) mapped.category = data.category || null;
     if (data.promotionalPrice !== undefined)
       mapped.promotionalPrice = data.promotionalPrice ?? null;

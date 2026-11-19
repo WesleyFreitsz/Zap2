@@ -53,6 +53,7 @@ export class TagController {
         conversationId,
         tagId,
         companyId,
+        req.user!,
       );
       res.status(201).json({ status: "success", data: result });
     } catch (error) {
@@ -73,6 +74,7 @@ export class TagController {
         conversationId,
         tagId,
         companyId,
+        req.user!,
       );
       res.status(200).json({ status: "success", data: result });
     } catch (error) {
@@ -90,6 +92,7 @@ export class TagController {
       const result = await tagService.getConversationTags(
         req.params.conversationId as string,
         companyId,
+        req.user!,
       );
       res.status(200).json({ status: "success", data: result });
     } catch (error) {

@@ -8,16 +8,12 @@ import { Link } from "react-router-dom";
 
 const statusColors = {
   OPEN: "bg-primary/15 text-primary border-primary/30",
-  PENDING: "bg-amber-500/15 text-amber-600 border-amber-500/30",
-  BOT: "bg-blue-500/15 text-blue-600 border-blue-500/30",
   CLOSED: "bg-muted text-muted-foreground border-border",
   TRANSFERRED: "bg-purple-500/15 text-purple-600 border-purple-500/30",
 };
 
 const statusLabels = {
   OPEN: "Aberta",
-  PENDING: "Pendente",
-  BOT: "Bot",
   CLOSED: "Fechada",
   TRANSFERRED: "Transferida",
 };

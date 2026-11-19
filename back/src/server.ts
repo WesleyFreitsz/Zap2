@@ -1,8 +1,11 @@
+import { createServer } from "node:http";
 import app from "./app";
 import { env } from "./config/env";
 import { logger } from "./utils/logger";
 import prisma from "./config/prisma";
 import AiTemperatureScheduler from "./schedulers/ai-temperature.scheduler";
+import ScheduledMessageWorker from "./workers/scheduledMessageWorker";
+import { initRealtime } from "./realtime";
 
 async function bootstrap() {
   try {
@@ -24,7 +27,12 @@ async function bootstrap() {
       );
     }
 
-    app.listen(env.PORT, () => {
+    const scheduledMessageWorker = new ScheduledMessageWorker();
+    await scheduledMessageWorker.start();
+
+    const httpServer = createServer(app);
+    initRealtime(httpServer);
+    httpServer.listen(env.PORT, () => {
       logger.info(`Server running on port ${env.PORT} in ${env.NODE_ENV} mode`);
       logger.info(`Health check: http://localhost:${env.PORT}/health`);
       logger.info(`API base: http://localhost:${env.PORT}/api`);

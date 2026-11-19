@@ -1,8 +1,11 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "../../config/prisma";
+import { emitConversationUpdated, emitMessageCreated } from "../../realtime";
 import { AppError } from "../../utils/AppError";
 import { LeadService } from "../leads/lead.service";
 import { UserService } from "../users/user.service";
-import { CreateConversationInput } from "./conversation.schema";
+import { assertConversationAccess, conversationScope, type Actor } from "./conversation-access";
+import { CreateConversationInput, UpdateConversationInput } from "./conversation.schema";
 
 const userService = new UserService();
 const leadService = new LeadService();
@@ -61,15 +64,12 @@ export class ConversationService {
       leadId: data.leadId,
     });
 
+    emitConversationUpdated(conversation);
     return this.formatConversation(conversation);
   }
 
   async findAll(companyId: string, userId: string, role: string) {
-    const where: any = { companyId };
-
-    if (role === "EMPLOYEE") {
-      where.assignedToId = userId;
-    }
+    const where: Prisma.ConversationWhereInput = { companyId, ...conversationScope({ userId, role }) };
 
     const conversations = await prisma.conversation.findMany({
       where,
@@ -79,17 +79,28 @@ export class ConversationService {
           select: { id: true, name: true, phone: true, avatarUrl: true },
         },
         _count: { select: { messages: true } },
+        integration: { select: { provider: true } },
+        messages: {
+          where: { sender: "CLIENT" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { createdAt: true },
+        },
       },
       orderBy: { updatedAt: "desc" },
     });
 
     return conversations
       .filter((conversation) => !this.shouldHideConversation(conversation))
-      .map((conversation) => this.formatConversation(conversation));
+      .map(({ integration, messages, ...conversation }) => this.formatConversation({
+        ...conversation,
+        provider: integration?.provider ?? null,
+        lastClientMessageAt: messages[0]?.createdAt ?? null,
+      }));
   }
 
   async findById(id: string, companyId: string, userId: string, role: string) {
-    const conversation = await prisma.conversation.findFirst({
+    const row = await prisma.conversation.findFirst({
       where: { id, companyId },
       include: {
         assignedTo: { select: { id: true, name: true, email: true } },
@@ -97,20 +108,24 @@ export class ConversationService {
           select: { id: true, name: true, phone: true, avatarUrl: true },
         },
         messages: { orderBy: { createdAt: "asc" } },
+        integration: { select: { provider: true } },
       },
     });
 
-    if (!conversation) throw new AppError("Conversation not found", 404);
+    if (!row) throw new AppError("Conversation not found", 404);
+    const { integration, ...conversation } = row;
 
-    if (role === "EMPLOYEE" && conversation.assignedToId !== userId) {
-      throw new AppError("Access denied to this conversation", 403);
-    }
+    assertConversationAccess(conversation, { userId, role });
 
     if (this.shouldHideConversation(conversation)) {
       throw new AppError("Conversation not found", 404);
     }
 
-    return this.formatConversation(conversation);
+    const lastClientMessageAt = conversation.messages.reduce<Date | null>(
+      (last, message) => message.sender === "CLIENT" ? message.createdAt : last,
+      null,
+    );
+    return this.formatConversation({ ...conversation, provider: integration?.provider ?? null, lastClientMessageAt });
   }
 
   async assign(conversationId: string, toUserId: string, companyId: string) {
@@ -127,21 +142,22 @@ export class ConversationService {
     if (!targetUser)
       throw new AppError("Target user not found or inactive", 404);
 
-    return prisma.conversation
-      .update({
-        where: { id: conversationId },
-        data: { assignedToId: toUserId, status: "OPEN" },
-        include: { assignedTo: { select: { id: true, name: true } } },
-      })
-      .then((conversation) => this.formatConversation(conversation));
+    const updated = await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { assignedToId: toUserId, status: "OPEN" },
+      include: { assignedTo: { select: { id: true, name: true } } },
+    });
+    emitConversationUpdated(updated, conversation.assignedToId);
+    return this.formatConversation(updated);
   }
 
-  async transfer(conversationId: string, toUserId: string, companyId: string) {
+  async transfer(conversationId: string, toUserId: string, companyId: string, actor: Actor) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
     });
 
     if (!conversation) throw new AppError("Conversation not found", 404);
+    assertConversationAccess(conversation, actor);
 
     const targetUser = await prisma.user.findFirst({
       where: {
@@ -155,44 +171,40 @@ export class ConversationService {
     if (!targetUser)
       throw new AppError("Target employee not found or inactive", 404);
 
-    const updated = await prisma.conversation.update({
-      where: { id: conversationId },
-      data: { assignedToId: toUserId, status: "TRANSFERRED" },
-      include: { assignedTo: { select: { id: true, name: true } } },
-    });
+    const [updated] = await prisma.$transaction([
+      prisma.conversation.update({
+        where: { id: conversationId },
+        data: { assignedToId: toUserId, status: "TRANSFERRED" },
+        include: { assignedTo: { select: { id: true, name: true } } },
+      }),
+      prisma.message.create({
+        data: {
+          conversationId,
+          sender: "SYSTEM",
+          content: `Conversation transferred to ${targetUser.name}`,
+        },
+      }),
+    ]);
 
-    await prisma.message.create({
-      data: {
-        conversationId,
-        sender: "SYSTEM",
-        content: `Conversation transferred to ${targetUser.name}`,
-      },
-    });
-
+    emitConversationUpdated(updated, conversation.assignedToId);
+    emitMessageCreated(updated);
     return this.formatConversation(updated);
   }
 
   async update(
     conversationId: string,
     companyId: string,
-    data: {
-      contactName?: string;
-      contactPhone?: string;
-      contactRemoteId?: string;
-      contactAvatarUrl?: string | null;
-      leadId?: string | null;
-      status?: string;
-      notes?: string;
-      temperature?: string;
-    },
+    data: UpdateConversationInput,
+    actor: Actor,
   ) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
     });
 
     if (!conversation) throw new AppError("Conversation not found", 404);
+    assertConversationAccess(conversation, actor);
 
-    const updateData: any = {};
+    const updateData: Prisma.ConversationUncheckedUpdateInput = {};
 
     if (data.contactName !== undefined)
       updateData.contactName = data.contactName;
@@ -217,7 +229,7 @@ export class ConversationService {
         if (!lead) throw new AppError("Lead not found", 404);
 
         updateData.leadId = lead.id;
-        updateData.contactPhone = lead.phone;
+        if (lead.phone) updateData.contactPhone = lead.phone;
 
         if (lead.avatarUrl) {
           updateData.contactAvatarUrl = lead.avatarUrl;
@@ -239,12 +251,16 @@ export class ConversationService {
           _count: { select: { messages: true } },
         },
       })
-      .then((conversation) => this.formatConversation(conversation));
+      .then((updated) => {
+        emitConversationUpdated(updated);
+        return this.formatConversation(updated);
+      });
   }
 
   async createLeadFromConversation(
     conversationId: string,
     companyId: string,
+    actor: Actor,
   ) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
@@ -258,6 +274,7 @@ export class ConversationService {
     });
 
     if (!conversation) throw new AppError("Conversation not found", 404);
+    assertConversationAccess(conversation, actor);
 
     if (this.shouldHideConversation(conversation)) {
       throw new AppError(
@@ -266,19 +283,14 @@ export class ConversationService {
       );
     }
 
-    const lead = await leadService.findOrCreateByPhone(
-      conversation.contactPhone,
-      companyId,
-      conversation.contactName,
-      conversation.contactAvatarUrl,
-    );
+    const lead = await leadService.findOrCreateForConversation(conversation, companyId);
 
     return prisma.conversation
       .update({
         where: { id: conversationId },
         data: {
           leadId: lead.id,
-          contactPhone: lead.phone,
+          ...(lead.phone && { contactPhone: lead.phone }),
           contactAvatarUrl:
             lead.avatarUrl || conversation.contactAvatarUrl || null,
         },
@@ -290,22 +302,26 @@ export class ConversationService {
           _count: { select: { messages: true } },
         },
       })
-      .then((updatedConversation) =>
-        this.formatConversation(updatedConversation),
-      );
+      .then((updated) => {
+        emitConversationUpdated(updated);
+        return this.formatConversation(updated);
+      });
   }
 
-  async close(conversationId: string, companyId: string) {
+  async close(conversationId: string, companyId: string, actor: Actor) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
     });
 
     if (!conversation) throw new AppError("Conversation not found", 404);
+    assertConversationAccess(conversation, actor);
 
-    return prisma.conversation.update({
+    const updated = await prisma.conversation.update({
       where: { id: conversationId },
       data: { status: "CLOSED" },
     });
+    emitConversationUpdated(updated);
+    return updated;
   }
 
   private shouldHideConversation(conversation: {

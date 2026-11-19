@@ -118,6 +118,12 @@ export const messagesApi = {
     apiClient.get(`/messages/${conversationId}`).then((r) => r.data.data),
   send: (data) =>
     apiClient.post("/messages/send", data).then((r) => r.data.data),
+  sendTemplate: (data) =>
+    apiClient.post("/messages/send-template", data).then((r) => r.data.data),
+  suggestReply: (conversationId) =>
+    apiClient
+      .post("/messages/suggest-reply", { conversationId })
+      .then((r) => r.data.data.suggestion),
 };
 
 // ============ PRODUCTS ============
@@ -155,14 +161,24 @@ export const dashboardApi = {
   weeklyActivity: () => apiClient.get("/dashboard/weekly-activity").then((r) => r.data.data),
 };
 
-// ============ INTEGRATIONS ============
-export const integrationsApi = {
-  list: () => apiClient.get("/integrations").then((r) => r.data.data),
-  create: (data) =>
-    apiClient.post("/integrations", data).then((r) => r.data.data),
-  toggle: (id) =>
-    apiClient.patch(`/integrations/${id}/toggle`).then((r) => r.data.data),
-  delete: (id) => apiClient.delete(`/integrations/${id}`).then((r) => r.data),
+export const channelsApi = {
+  list: () => apiClient.get("/channels").then((r) => r.data.data),
+  whatsappTemplates: (channelId, refresh = false) =>
+    apiClient
+      .get(`/channels/${channelId}/whatsapp-templates`, {
+        params: refresh ? { refresh: true } : undefined,
+      })
+      .then((r) => r.data.data),
+  metaConfig: () => apiClient.get("/channels/meta/config").then((r) => r.data.data),
+  discoverPages: (code) =>
+    apiClient.post("/channels/meta/pages/discover", { code }).then((r) => r.data.data),
+  connectPages: (data) =>
+    apiClient.post("/channels/meta/pages/connect", data).then((r) => r.data.data),
+  connectWhatsAppCloud: (data) =>
+    apiClient.post("/channels/whatsapp-cloud/connect", data).then((r) => r.data.data),
+  connectManual: (data) =>
+    apiClient.post("/channels/meta/manual", data).then((r) => r.data.data),
+  remove: (id) => apiClient.delete(`/channels/${id}`),
 };
 
 // ============ WHATSAPP (multi-session) ============
@@ -208,11 +224,34 @@ export const aiConfigApi = {
   save: (data) => apiClient.put("/ai-config", data).then((r) => r.data.data),
 };
 
+export const quickRepliesApi = {
+  list: () => apiClient.get("/quick-replies").then((r) => r.data.data),
+  create: (data) => apiClient.post("/quick-replies", data).then((r) => r.data.data),
+  update: (id, data) => apiClient.put(`/quick-replies/${id}`, data).then((r) => r.data.data),
+  delete: (id) => apiClient.delete(`/quick-replies/${id}`),
+};
+
+export function quickRepliesQuery(companyId) {
+  return {
+    queryKey: ["quick-replies", companyId],
+    queryFn: quickRepliesApi.list,
+    staleTime: 5 * 60 * 1000,
+  };
+}
+
 // ============ TAGS ============
 export const tagsApi = {
   list: () => apiClient.get("/tags").then((r) => r.data.data),
   create: (data) => apiClient.post("/tags", data).then((r) => r.data.data),
   delete: (id) => apiClient.delete(`/tags/${id}`).then((r) => r.data),
+  forConversation: (conversationId) =>
+    apiClient.get(`/tags/conversation/${conversationId}`).then((r) => r.data.data),
+  assign: (conversationId, tagId) =>
+    apiClient.post("/tags/assign", { conversationId, tagId }).then((r) => r.data.data),
+  unassign: (conversationId, tagId) =>
+    apiClient
+      .delete(`/tags/conversation/${conversationId}/tag/${tagId}`)
+      .then((r) => r.data),
 };
 
 // ============ SETTINGS / PROFILE ============

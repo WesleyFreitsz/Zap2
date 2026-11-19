@@ -31,7 +31,6 @@ export const createProductSchema = z.object({
   code: optionalString,
   description: optionalString,
   price: requiredNumber,
-  image: optionalString,
   imageUrl: optionalString,
   category: optionalString,
   promotionalPrice: optionalNumber,

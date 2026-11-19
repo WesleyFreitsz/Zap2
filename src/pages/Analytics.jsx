@@ -24,11 +24,11 @@ import {
 import StatCard from "../components/dashboard/StatCard";
 
 const COLORS = [
-  "hsl(145, 65%, 42%)",
-  "hsl(200, 70%, 50%)",
-  "hsl(30, 90%, 55%)",
-  "hsl(280, 65%, 60%)",
-  "hsl(340, 75%, 55%)",
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-3))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-5))",
 ];
 
 export default function Analytics() {
@@ -112,7 +112,7 @@ export default function Analytics() {
                   />
                   <Bar
                     dataKey="quantidade"
-                    fill="hsl(145, 65%, 42%)"
+                    fill="hsl(var(--chart-1))"
                     radius={[8, 8, 0, 0]}
                   />
                 </BarChart>

@@ -78,6 +78,7 @@ export class ConversationController {
         conversationId,
         toUserId,
         companyId,
+        req.user!,
       );
       res.status(200).json({ status: "success", data: result });
     } catch (error) {
@@ -92,6 +93,7 @@ export class ConversationController {
         req.params.id as string,
         companyId,
         req.body,
+        req.user!,
       );
       res.status(200).json({ status: "success", data: result });
     } catch (error) {
@@ -109,6 +111,7 @@ export class ConversationController {
       const result = await conversationService.createLeadFromConversation(
         req.params.id as string,
         companyId,
+        req.user!,
       );
       res.status(200).json({ status: "success", data: result });
     } catch (error) {
@@ -122,6 +125,7 @@ export class ConversationController {
       const result = await conversationService.close(
         req.params.id as string,
         companyId,
+        req.user!,
       );
       res.status(200).json({ status: "success", data: result });
     } catch (error) {

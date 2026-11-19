@@ -1,10 +1,14 @@
+import fs from "fs";
 import multer from "multer";
 import path from "path";
 import { AppError } from "../utils/AppError";
 
+const uploadDir = path.join(__dirname, "../../uploads");
+fs.mkdirSync(uploadDir, { recursive: true });
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
-    cb(null, path.join(__dirname, "../../uploads"));
+    cb(null, uploadDir);
   },
   filename: (_req, file, cb) => {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);

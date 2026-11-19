@@ -14,9 +14,9 @@ export default function ProductCard({ product, onEdit, onDelete }) {
     >
       {/* Image */}
       <div className="h-36 bg-muted flex items-center justify-center relative overflow-hidden">
-        {product.imageUrl || product.image ? (
+        {product.imageUrl ? (
           <img
-            src={product.imageUrl || product.image}
+            src={product.imageUrl}
             alt={product.name}
             className="w-full h-full object-cover"
           />

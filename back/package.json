@@ -10,7 +10,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
-    "worker": "echo Worker disabled"
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "prisma:seed:dev": "tsx --env-file=.env prisma/seed-dev.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -28,6 +29,7 @@
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.4",
+    "socket.io": "^4.8.4",
     "winston": "^3.15.0",
     "zod": "^3.23.8"
   },

@@ -17,8 +17,6 @@ enum ConversationStatus {
   OPEN
   CLOSED
   TRANSFERRED
-  PENDING
-  BOT
 }
 
 enum SenderType {
@@ -30,6 +28,8 @@ enum SenderType {
 enum ScheduledMessageStatus {
   PENDING
   SENT
+  SENDING
+  FAILED
 }
 
 enum IntegrationType {
@@ -41,6 +41,11 @@ enum IntegrationType {
 enum IntegrationStatus {
   ACTIVE
   INACTIVE
+}
+
+enum ChannelProvider {
+  WPPCONNECT
+  META
 }
 
 enum ConnectionStatus {
@@ -128,8 +133,22 @@ model Company {
   leads             Lead[]
   invitations       Invitation[]
   subscription      Subscription?
+  quickReplies      QuickReply[]
 
   @@map("companies")
+}
+
+model QuickReply {
+  id        String   @id @default(uuid())
+  companyId String
+  shortcut  String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, shortcut])
+  @@map("quick_replies")
 }
 
 model User {
@@ -161,6 +180,7 @@ model Conversation {
   assignedToId String?
   companyId    String
   leadId       String?
+  integrationId String?
   channel      IntegrationType    @default(WHATSAPP)
   status       ConversationStatus @default(OPEN)
   createdAt    DateTime           @default(now())
@@ -169,10 +189,12 @@ model Conversation {
   assignedTo        User?              @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   lead              Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  integration       Integration?       @relation(fields: [integrationId], references: [id], onDelete: SetNull)
   messages          Message[]
   scheduledMessages ScheduledMessage[]
   tags              ConversationTag[]
 
+  @@index([companyId, channel, contactRemoteId])
   @@map("conversations")
 }
 
@@ -199,7 +221,6 @@ model Product {
   name             String
   description      String?
   price            Float
-  image            String?
   imageUrl         String?
   code             String?
   category         String?
@@ -220,8 +241,11 @@ model ScheduledMessage {
   id             String                 @id @default(uuid())
   conversationId String
   content        String
+  template       Json?
   sendAt         DateTime
   status         ScheduledMessageStatus @default(PENDING)
+  sentAt         DateTime?
+  error          String?
   companyId      String
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -235,13 +259,8 @@ model ScheduledMessage {
 model AiConfig {
   id              String  @id @default(uuid())
   companyId       String  @unique
-  aiName          String  @default("Assistente IA")
   personality     String  @default("professional")
   language        String  @default("pt-BR")
-  greeting        String  @default("Olá! Como posso ajudar?")
-  fallbackMessage String  @default("Desculpe, não entendi. Pode reformular?")
-  salesMode       Boolean @default(false)
-  autoReply       Boolean @default(true)
   maxTokens       Int     @default(500)
   temperature     Float   @default(0.7)
   systemPrompt    String? @db.Text
@@ -287,6 +306,12 @@ model ConversationTag {
 model Integration {
   id               String            @id @default(uuid())
   type             IntegrationType
+  provider         ChannelProvider   @default(WPPCONNECT)
+  externalAccountId String?
+  metaPageId       String?
+  wabaId           String?
+  label            String?
+  accessTokenEncrypted String?
   token            String
   companyId        String
   status           IntegrationStatus @default(ACTIVE)
@@ -299,16 +324,20 @@ model Integration {
   updatedAt        DateTime          @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
 
   createdAt DateTime @default(now())
 
+  @@unique([type, externalAccountId])
   @@map("integrations")
 }
 
 model Lead {
   id           String          @id @default(uuid())
   name         String
-  phone        String
+  phone        String?
+  channel      IntegrationType @default(WHATSAPP)
+  contactRemoteId String?
   avatarUrl    String?
   email        String?
   temperature  LeadTemperature @default(COLD)
@@ -325,6 +354,7 @@ model Lead {
   tags          LeadTag[]
 
   @@unique([phone, companyId])
+  @@unique([companyId, channel, contactRemoteId])
   @@map("leads")
 }
 

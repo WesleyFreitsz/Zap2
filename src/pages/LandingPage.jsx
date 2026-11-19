@@ -28,18 +28,18 @@ import {
 const features = [
   {
     icon: Bot,
-    title: "IA Vendedora",
-    desc: "Inteligência artificial que identifica intenção de compra e fecha vendas automaticamente pelo WhatsApp.",
+    title: "Sugestões com IA",
+    desc: "A IA sugere respostas com base no seu catálogo e nas regras do negócio. O atendente revisa e envia.",
   },
   {
     icon: MessageSquare,
-    title: "Atendimento Omnichannel",
-    desc: "Gerencie todas as conversas do WhatsApp em um painel centralizado com visão completa do cliente.",
+    title: "Caixa compartilhada",
+    desc: "WhatsApp, Messenger e Instagram numa caixa só, com as conversas distribuídas entre a equipe.",
   },
   {
     icon: Smartphone,
-    title: "WhatsApp Nativo",
-    desc: "Integração direta com WPPConnect para conexão estável e confiável com o WhatsApp, sem Docker.",
+    title: "WhatsApp oficial ou por QR",
+    desc: "Conecte pela API oficial da Meta ou, para começar rápido, pelo QR Code (beta).",
   },
   {
     icon: Users,
@@ -48,13 +48,13 @@ const features = [
   },
   {
     icon: BarChart3,
-    title: "Analytics em Tempo Real",
-    desc: "Dashboards com métricas de conversas, taxa de resposta da IA, conversões e desempenho da equipe.",
+    title: "Métricas do atendimento",
+    desc: "Painel com volume de conversas e mensagens e o desempenho de cada atendente.",
   },
   {
     icon: Clock,
-    title: "Agendamento Inteligente",
-    desc: "Agende mensagens, gerencie follow-ups automáticos e segmente contatos por temperatura.",
+    title: "Agenda e segmentação",
+    desc: "Agende mensagens, organize contatos com tags e acompanhe a temperatura dos leads.",
   },
 ];
 
@@ -75,7 +75,7 @@ export default function LandingPage() {
             <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
               <Zap className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold tracking-tight">ZapAI</span>
+            <span className="text-xl font-bold tracking-tight">Zap2</span>
           </div>
           <nav className="hidden md:flex items-center gap-8">
             <a
@@ -122,15 +122,15 @@ export default function LandingPage() {
               className="mb-6 px-4 py-1.5 text-sm font-medium border-primary/30 text-primary"
             >
               <Sparkles className="w-3.5 h-3.5 mr-1.5" />
-              Plataforma de Atendimento com IA
+              Atendimento multicanal com IA
             </Badge>
             <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight leading-tight">
-              Transforme seu WhatsApp em uma{" "}
-              <span className="text-primary">máquina de vendas</span>
+              Todo o seu atendimento em{" "}
+              <span className="text-primary">uma caixa só</span>
             </h1>
             <p className="mt-6 text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-              IA que vende, atende e agenda. Conecte seu WhatsApp e deixe a
-              inteligência artificial trabalhar por você 24/7.
+              WhatsApp, Messenger e Instagram no mesmo painel, com a equipe
+              dividindo as conversas e a IA sugerindo respostas.
             </p>
             <div className="mt-10 flex items-center justify-center gap-4 flex-wrap">
               <Link to="/login">
@@ -152,15 +152,15 @@ export default function LandingPage() {
             <div className="mt-12 flex items-center justify-center gap-8 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-primary" />
-                <span>Sem cartão de crédito</span>
+                <span>Canais oficiais da Meta</span>
               </div>
               <div className="flex items-center gap-2">
                 <Globe className="w-4 h-4 text-primary" />
-                <span>WhatsApp integrado</span>
+                <span>Mensagens em tempo real</span>
               </div>
               <div className="flex items-center gap-2">
                 <Bot className="w-4 h-4 text-primary" />
-                <span>IA pronta para usar</span>
+                <span>A IA sugere, você decide</span>
               </div>
             </div>
           </div>
@@ -172,11 +172,10 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight">
-              Tudo que você precisa para vender mais
+              Tudo que sua equipe precisa para atender bem
             </h2>
             <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
-              Uma plataforma completa para gerenciar atendimento, vendas e
-              relacionamento com clientes via WhatsApp.
+              Atendimento, vendas e relacionamento com clientes em um só lugar.
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -212,20 +211,19 @@ export default function LandingPage() {
                 Integração
               </Badge>
               <h2 className="text-3xl md:text-4xl font-bold tracking-tight">
-                Conectado com <span className="text-primary">WhatsApp</span>
+                Conecte seus <span className="text-primary">canais</span>
               </h2>
               <p className="mt-4 text-muted-foreground leading-relaxed">
-                Nossa plataforma se integra nativamente com o WhatsApp via
-                WPPConnect. Configure em minutos, sem Docker, e comece a
-                atender.
+                Escolha o canal, siga o assistente e as mensagens começam a
+                chegar no painel.
               </p>
               <ul className="mt-8 space-y-4">
                 {[
-                  "Conexão via QR Code ou API Token",
-                  "Envio e recebimento de mensagens em tempo real",
-                  "Webhook automático para notificações",
-                  "Suporte a múltiplas instâncias",
-                  "Status de conexão monitorado no painel",
+                  "WhatsApp pela API oficial da Meta",
+                  "WhatsApp por QR Code (beta)",
+                  "Facebook Messenger e Instagram",
+                  "Mensagens em tempo real, sem recarregar a página",
+                  "Status de cada canal no painel",
                 ].map((item, i) => (
                   <li key={i} className="flex items-center gap-3 text-sm">
                     <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -252,7 +250,7 @@ export default function LandingPage() {
                   <div>
                     <p className="font-bold">WhatsApp Conectado</p>
                     <p className="text-xs text-muted-foreground">
-                      via WPPConnect
+                      API oficial da Meta
                     </p>
                   </div>
                   <div className="ml-auto flex items-center gap-1.5">
@@ -265,9 +263,9 @@ export default function LandingPage() {
                 <div className="space-y-3">
                   <div className="bg-muted/50 rounded-xl p-4">
                     <p className="text-xs text-muted-foreground mb-1">
-                      Provedor API
+                      Canal
                     </p>
-                    <p className="text-sm font-semibold">WPPConnect</p>
+                    <p className="text-sm font-semibold">WhatsApp oficial</p>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-muted/50 rounded-xl p-4">
@@ -359,11 +357,10 @@ export default function LandingPage() {
       <section className="py-24">
         <div className="max-w-4xl mx-auto px-6 text-center">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight">
-            Pronto para automatizar seu atendimento?
+            Pronto para organizar seu atendimento?
           </h2>
           <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
-            Junte-se a centenas de empresas que já usam IA para vender mais pelo
-            WhatsApp.
+            Conecte o primeiro canal em poucos minutos.
           </p>
           <div className="mt-10">
             <Link to="/login">
@@ -383,10 +380,10 @@ export default function LandingPage() {
             <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
               <Zap className="w-3.5 h-3.5 text-primary-foreground" />
             </div>
-            <span className="font-bold">ZapAI</span>
+            <span className="font-bold">Zap2</span>
           </div>
           <p className="text-xs text-muted-foreground">
-            &copy; {new Date().getFullYear()} ZapAI. Todos os direitos
+            &copy; {new Date().getFullYear()} Zap2. Todos os direitos
             reservados.
           </p>
         </div>

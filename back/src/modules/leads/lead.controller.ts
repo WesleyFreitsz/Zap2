@@ -12,7 +12,7 @@ export class LeadController {
       if (!companyId) throw new AppError("Company not found", 400);
 
       const data = createLeadSchema.parse(req.body);
-      const lead = await leadService.create(data, companyId);
+      const lead = await leadService.create(data, companyId, req.user!);
       res.status(201).json({ status: "success", data: lead });
     } catch (error) {
       next(error);
@@ -58,6 +58,7 @@ export class LeadController {
       const lead = await leadService.findById(
         req.params.id as string,
         companyId,
+        req.user!,
       );
       res.json({ status: "success", data: lead });
     } catch (error) {
@@ -75,6 +76,7 @@ export class LeadController {
         req.params.id as string,
         companyId,
         data,
+        req.user!,
       );
       res.json({ status: "success", data: lead });
     } catch (error) {
@@ -90,6 +92,7 @@ export class LeadController {
       const result = await leadService.delete(
         req.params.id as string,
         companyId,
+        req.user!,
       );
       res.json({ status: "success", data: result });
     } catch (error) {

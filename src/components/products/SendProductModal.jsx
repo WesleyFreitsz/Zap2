@@ -99,9 +99,9 @@ export default function SendProductModal({ conversationId, onClose }) {
                     className={`flex items-center gap-3 p-3 cursor-pointer transition-colors border-b last:border-0 hover:bg-muted ${selected?.id === product.id ? "bg-accent border-l-2 border-l-primary" : ""}`}
                   >
                     <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-                      {product.imageUrl || product.image ? (
+                      {product.imageUrl ? (
                         <img
-                          src={product.imageUrl || product.image}
+                          src={product.imageUrl}
                           alt=""
                           className="w-full h-full object-cover"
                         />

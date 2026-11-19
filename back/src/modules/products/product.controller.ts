@@ -9,7 +9,6 @@ export class ProductController {
       const companyId = req.user!.companyId!;
       if (req.file) {
         const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
-        req.body.image = imageUrl;
         req.body.imageUrl = imageUrl;
       }
       const result = await productService.create(req.body, companyId);
@@ -55,7 +54,6 @@ export class ProductController {
       const companyId = req.user!.companyId!;
       if (req.file) {
         const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
-        req.body.image = imageUrl;
         req.body.imageUrl = imageUrl;
       }
       const result = await productService.update(
@@ -88,12 +86,14 @@ export class ProductController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const companyId = req.user!.companyId!;
+      const { companyId, userId, role } = req.user!;
       const { productId, conversationId, customMessage } = req.body;
       const result = await productService.sendToChat(
         productId,
         conversationId,
-        companyId,
+        companyId!,
+        userId,
+        role,
         customMessage,
       );
       res.status(201).json({ status: "success", data: result });

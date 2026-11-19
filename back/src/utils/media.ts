@@ -80,16 +80,28 @@ export async function saveBase64Media(options: {
   fileName?: string | null;
   mimeType?: string | null;
 }) {
-  const payload = getBase64Payload(options.base64);
-  const resolvedMimeType = getMimeType(options.base64, options.mimeType);
+  return saveMediaBuffer({
+    buffer: Buffer.from(getBase64Payload(options.base64), "base64"),
+    directory: options.directory,
+    fileName: options.fileName,
+    mimeType: getMimeType(options.base64, options.mimeType),
+  });
+}
+
+export async function saveMediaBuffer(options: {
+  buffer: Buffer;
+  directory?: string;
+  fileName?: string | null;
+  mimeType: string;
+}) {
+  const { buffer, mimeType: resolvedMimeType } = options;
   const extension = getFileExtension(resolvedMimeType, options.fileName);
   const safeDirectory = ensureDirectoryName(options.directory || "chat-media");
   const safeFileName = sanitizeFileName(options.fileName || `media-${Date.now()}`);
-  const uniqueName = `${safeFileName.replace(new RegExp(`${extension}$`), "")}-${crypto.randomUUID()}${extension}`;
+  const fileStem = extension && safeFileName.endsWith(extension) ? safeFileName.slice(0, -extension.length) : safeFileName;
+  const uniqueName = `${fileStem}-${crypto.randomUUID()}${extension}`;
   const absoluteDirectory = path.join(UPLOADS_DIR, safeDirectory);
   const absolutePath = path.join(absoluteDirectory, uniqueName);
-  const buffer = Buffer.from(payload, "base64");
-
   await mkdir(absoluteDirectory, { recursive: true });
   await writeFile(absolutePath, buffer);
 

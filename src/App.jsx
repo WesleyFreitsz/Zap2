@@ -19,6 +19,7 @@ import {
 import PageNotFound from "./lib/PageNotFound";
 
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
+import { useRealtime } from "@/lib/realtime";
 
 import { ThemeProvider } from "@/lib/ThemeContext";
 
@@ -30,7 +31,7 @@ import Conversations from "./pages/Conversations";
 
 import AIConfig from "./pages/AIConfig";
 
-import WhatsAppSettings from "./pages/WhatsAppSettings";
+import Channels from "./pages/Channels";
 
 import Analytics from "./pages/Analytics";
 
@@ -146,6 +147,11 @@ const RoleRoute = ({ children, allowed }) => {
 
 
 
+function Realtime() {
+  useRealtime();
+  return null;
+}
+
 function App() {
 
   return (
@@ -155,6 +161,7 @@ function App() {
       <AuthProvider>
 
         <QueryClientProvider client={queryClientInstance}>
+          <Realtime />
 
           <Router>
 
@@ -282,13 +289,13 @@ function App() {
 
                 <Route
 
-                  path="/whatsapp"
+                  path="/channels"
 
                   element={
 
                     <RoleRoute allowed={["ADMIN"]}>
 
-                      <WhatsAppSettings />
+                      <Channels />
 
                     </RoleRoute>
 
@@ -298,6 +305,10 @@ function App() {
 
                 <Route
 
+                  path="/whatsapp"
+                  element={<Navigate to="/channels" replace />}
+                />
+                <Route
                   path="/employees"
 
                   element={
