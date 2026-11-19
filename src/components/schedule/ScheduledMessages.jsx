@@ -10,7 +10,6 @@ import {
   Trash2,
   CheckCircle,
   XCircle,
-  RefreshCw,
   Send,
 } from "lucide-react";
 import { format, isPast, isToday, isTomorrow } from "date-fns";
@@ -37,13 +36,6 @@ const statusConfig = {
   },
 };
 
-const repeatLabels = {
-  none: "Sem repetição",
-  daily: "Diário",
-  weekly: "Semanal",
-  monthly: "Mensal",
-};
-
 function safeDate(dateStr) {
   if (!dateStr) return null;
   const d = new Date(dateStr);
@@ -60,7 +52,6 @@ function getDateLabel(dateStr) {
 
 export default function ScheduledMessages() {
   const [showModal, setShowModal] = useState(false);
-  const [editing, setEditing] = useState(null);
   const qc = useQueryClient();
 
   const { data: scheduled = [], isLoading } = useQuery({
@@ -82,7 +73,7 @@ export default function ScheduledMessages() {
 
   // Group by date
   const grouped = scheduled.reduce((acc, msg) => {
-    const key = getDateLabel(msg.sendAt || msg.scheduled_at);
+    const key = getDateLabel(msg.sendAt);
     if (!acc[key]) acc[key] = [];
     acc[key].push(msg);
     return acc;
@@ -109,10 +100,7 @@ export default function ScheduledMessages() {
           </div>
         </div>
         <Button
-          onClick={() => {
-            setEditing(null);
-            setShowModal(true);
-          }}
+          onClick={() => setShowModal(true)}
           className="gap-2"
         >
           <Plus className="w-4 h-4" /> Agendar Mensagem
@@ -149,20 +137,20 @@ export default function ScheduledMessages() {
               {msgs.map((msg) => (
                 <Card
                   key={msg.id}
-                  className="p-4 hover:shadow-md transition-shadow"
+                  className="p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 flex-1 min-w-0">
                       <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0 font-semibold text-primary text-sm">
-                        {msg.contact_name?.charAt(0)?.toUpperCase() || "?"}
+                        {msg.conversation?.contactName?.charAt(0)?.toUpperCase() || "?"}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-sm">
-                            {msg.contact_name || "Contato"}
+                            {msg.conversation?.contactName || "Contato"}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {msg.contact_phone}
+                            {msg.conversation?.contactPhone}
                           </span>
                           <Badge
                             variant="outline"
@@ -171,19 +159,13 @@ export default function ScheduledMessages() {
                           >
                             {statusConfig[msg.status]?.label}
                           </Badge>
-                          {msg.repeat !== "none" && (
-                            <Badge variant="outline" className="text-xs gap-1">
-                              <RefreshCw className="w-2.5 h-2.5" />{" "}
-                              {repeatLabels[msg.repeat]}
-                            </Badge>
-                          )}
                         </div>
                         <p className="text-sm text-foreground mt-1 line-clamp-2">
-                          {msg.message}
+                          {msg.content}
                         </p>
-                        {msg.notes && (
-                          <p className="text-xs text-muted-foreground mt-1 italic">
-                            {msg.notes}
+                        {msg.status === "failed" && msg.error && (
+                          <p className="text-xs text-destructive mt-1">
+                            {msg.error}
                           </p>
                         )}
                       </div>
@@ -191,17 +173,17 @@ export default function ScheduledMessages() {
                     <div className="flex items-center gap-1 shrink-0">
                       <div className="text-right mr-2">
                         <p className="text-sm font-semibold text-primary">
-                          {safeDate(msg.sendAt || msg.scheduled_at)
+                          {safeDate(msg.sendAt)
                             ? format(
-                                safeDate(msg.sendAt || msg.scheduled_at),
+                                safeDate(msg.sendAt),
                                 "HH:mm",
                               )
                             : "--:--"}
                         </p>
                         <p className="text-[11px] text-muted-foreground">
-                          {safeDate(msg.sendAt || msg.scheduled_at)
+                          {safeDate(msg.sendAt)
                             ? format(
-                                safeDate(msg.sendAt || msg.scheduled_at),
+                                safeDate(msg.sendAt),
                                 "dd/MM/yyyy",
                               )
                             : "--/--/----"}
@@ -235,13 +217,7 @@ export default function ScheduledMessages() {
       )}
 
       {showModal && (
-        <ScheduleMessageModal
-          initial={editing}
-          onClose={() => {
-            setShowModal(false);
-            setEditing(null);
-          }}
-        />
+        <ScheduleMessageModal onClose={() => setShowModal(false)} />
       )}
     </div>
   );

@@ -280,7 +280,7 @@ export default function AdminPlans() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="p-6 lg:p-8 space-y-6">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Crown className="w-6 h-6" /> Gerenciar Planos
         </h1>
@@ -294,7 +294,7 @@ export default function AdminPlans() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 lg:p-8 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">

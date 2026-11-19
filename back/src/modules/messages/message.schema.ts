@@ -6,3 +6,9 @@ export const sendMessageSchema = z.object({
 });
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+
+export const suggestReplySchema = z.object({
+  conversationId: z.string().uuid(),
+});
+
+export type SuggestReplyInput = z.infer<typeof suggestReplySchema>;

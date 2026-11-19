@@ -19,7 +19,7 @@ export default function AdminBilling() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="p-6 lg:p-8 space-y-6">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Receipt className="w-6 h-6" /> Faturamento Geral
         </h1>
@@ -35,7 +35,7 @@ export default function AdminBilling() {
   const stats = data || {};
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 lg:p-8 space-y-6">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Receipt className="w-6 h-6 text-green-500" /> Faturamento Geral

@@ -39,4 +39,7 @@ export const env = {
     process.env.ASAAS_API_URL || "https://sandbox.asaas.com/api/v3",
   ASAAS_API_KEY: process.env.ASAAS_API_KEY || "",
   ASAAS_WEBHOOK_TOKEN: process.env.ASAAS_WEBHOOK_TOKEN || "",
+
+  GROQ_API_KEY: process.env.GROQ_API_KEY || "",
+  GROQ_MODEL: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
 };

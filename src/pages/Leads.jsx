@@ -144,7 +144,7 @@ export default function Leads() {
     user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 lg:p-8 space-y-6">
       <div className="flex items-center justify-between">
         <div className="my-3 mx-4">
           <h1 className="text-2xl font-bold">Leads</h1>

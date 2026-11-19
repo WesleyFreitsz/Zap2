@@ -19,6 +19,25 @@ export class MessageController {
     }
   }
 
+  async suggestReply(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const { companyId, userId, role } = req.user!;
+      const result = await messageService.suggestReply(
+        req.body,
+        companyId!,
+        userId,
+        role,
+      );
+      res.status(200).json({ status: "success", data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async findByConversation(
     req: Request,
     res: Response,

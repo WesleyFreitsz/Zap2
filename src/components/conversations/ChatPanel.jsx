@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
-import { messagesApi, conversationsApi } from "@/api/apiClient";
+import { messagesApi } from "@/api/apiClient";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/AuthContext";
 import { useTheme } from "@/lib/ThemeContext";
@@ -13,12 +12,9 @@ import {
   Sparkles,
   Loader2,
   Package,
-  XCircle,
-  User,
 } from "lucide-react";
 import ChatBubble from "./ChatBubble";
 import { toast } from "sonner";
-import { Switch } from "@/components/ui/switch";
 import SendProductModal from "@/components/products/SendProductModal";
 
 export default function ChatPanel({ conversation, messages = [] }) {
@@ -58,37 +54,17 @@ export default function ChatPanel({ conversation, messages = [] }) {
     },
   });
 
-  const toggleAutoMode = useMutation({
-    mutationFn: () =>
-      conversationsApi.update(conversation.id, {
-        autoMode: !conversation.autoMode,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      toast.success(
-        conversation.autoMode
-          ? "Modo manual ativado"
-          : "Modo automático ativado",
-      );
-    },
-  });
-
   const handleSuggest = async () => {
     setGenerating(true);
-    const recentMessages = messages
-      .slice(-6)
-      .map(
-        (m) =>
-          `${m.sender === "CLIENT" ? "Cliente" : "Atendente"}: ${m.content}`,
-      )
-      .join("\n");
-
-    const result = await messagesApi.suggestReply({
-      conversationId: conversation.id,
-      recentMessages,
-    });
-    setSuggestedReply(result);
-    setGenerating(false);
+    try {
+      setSuggestedReply(await messagesApi.suggestReply(conversation.id));
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message || "Não foi possível gerar a sugestão",
+      );
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleSend = () => {
@@ -135,20 +111,6 @@ export default function ChatPanel({ conversation, messages = [] }) {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <User className="w-3.5 h-3.5 text-muted-foreground" />
-            <Switch
-              checked={conversation.autoMode}
-              onCheckedChange={() => toggleAutoMode.mutate()}
-              className="data-[state=checked]:bg-primary"
-            />
-            <Bot className="w-3.5 h-3.5 text-primary" />
-          </div>
-          <Badge variant="outline" className="text-[10px]">
-            {conversation.autoMode ? "Automático" : "Manual"}
-          </Badge>
-        </div>
       </div>
 
       {/* Messages */}
@@ -178,7 +140,7 @@ export default function ChatPanel({ conversation, messages = [] }) {
             <Sparkles className="w-4 h-4 text-primary mt-0.5 shrink-0" />
             <div className="flex-1">
               <p className="text-xs font-medium text-primary mb-1">
-                Sugestão da IA:
+                Sugestão da IA (revise antes de enviar):
               </p>
               <p className="text-sm">{suggestedReply}</p>
             </div>

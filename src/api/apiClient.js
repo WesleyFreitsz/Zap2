@@ -118,6 +118,10 @@ export const messagesApi = {
     apiClient.get(`/messages/${conversationId}`).then((r) => r.data.data),
   send: (data) =>
     apiClient.post("/messages/send", data).then((r) => r.data.data),
+  suggestReply: (conversationId) =>
+    apiClient
+      .post("/messages/suggest-reply", { conversationId })
+      .then((r) => r.data.data.suggestion),
 };
 
 // ============ PRODUCTS ============

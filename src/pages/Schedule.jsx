@@ -20,7 +20,7 @@ export default function Schedule() {
           <TabsTrigger value="schedule">📅 Mensagens Agendadas</TabsTrigger>
           <TabsTrigger value="board">🌡️ Hot / Cold Board</TabsTrigger>
           <TabsTrigger value="tags">🏷️ Gerenciar Tags</TabsTrigger>
-          <TabsTrigger value="ai">🤖 IA de Temperatura</TabsTrigger>
+          <TabsTrigger value="ai">⚙️ Classificação automática</TabsTrigger>
         </TabsList>
 
         <TabsContent value="schedule" className="mt-4">

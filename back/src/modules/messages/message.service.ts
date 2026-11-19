@@ -3,7 +3,14 @@ import { emitMessageCreated } from "../../realtime";
 import { AppError } from "../../utils/AppError";
 import { logger } from "../../utils/logger";
 import { wppConnectService } from "../integrations/wppconnect/wppconnect.service";
-import { SendMessageInput } from "./message.schema";
+import { AiConfigService } from "../ai-config/aiConfig.service";
+import { createChatCompletion } from "../ai-config/groq.client";
+import { SendMessageInput, SuggestReplyInput } from "./message.schema";
+import { buildReplySuggestionPrompt } from "./reply-suggestion.prompt";
+
+const aiConfigService = new AiConfigService();
+const SUGGESTION_HISTORY = 12;
+const SUGGESTION_CATALOG_LIMIT = 50;
 
 export class MessageService {
   async send(
@@ -62,6 +69,69 @@ export class MessageService {
     );
 
     return message;
+  }
+
+  async suggestReply(
+    data: SuggestReplyInput,
+    companyId: string,
+    userId: string,
+    role: string,
+  ): Promise<{ suggestion: string }> {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: data.conversationId, companyId },
+      include: { company: { select: { name: true } } },
+    });
+
+    if (!conversation) throw new AppError("Conversation not found", 404);
+
+    if (role === "EMPLOYEE" && conversation.assignedToId !== userId) {
+      throw new AppError("Access denied to this conversation", 403);
+    }
+
+    const [recentMessages, aiConfig, products] = await Promise.all([
+      prisma.message.findMany({
+        where: { conversationId: conversation.id },
+        orderBy: { createdAt: "desc" },
+        take: SUGGESTION_HISTORY,
+        select: { sender: true, content: true },
+      }),
+      aiConfigService.get(companyId),
+      prisma.product.findMany({
+        where: { companyId, active: true },
+        orderBy: { name: "asc" },
+        take: SUGGESTION_CATALOG_LIMIT,
+        select: {
+          name: true,
+          code: true,
+          description: true,
+          price: true,
+          promotionalPrice: true,
+          stock: true,
+        },
+      }),
+    ]);
+
+    if (recentMessages.length === 0) {
+      throw new AppError("Conversa sem mensagens para sugerir resposta", 400);
+    }
+
+    const prompt = buildReplySuggestionPrompt({
+      companyName: conversation.company.name,
+      personality: aiConfig.personality,
+      language: aiConfig.language,
+      systemPrompt: aiConfig.systemPrompt,
+      productContext: aiConfig.productContext,
+      products,
+      messages: recentMessages.reverse(),
+    });
+
+    const suggestion = await createChatCompletion(prompt, {
+      // modelos de raciocínio gastam parte do limite antes de escrever a resposta
+      maxTokens: Math.max(aiConfig.maxTokens, 600),
+      temperature: aiConfig.temperature,
+    });
+
+    return { suggestion };
   }
 
   async findByConversation(

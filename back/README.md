@@ -38,43 +38,36 @@ src/
 
 ### Pré-requisitos
 
-- Node.js 18+
-- PostgreSQL
+- Node.js 22+
+- Docker (para o PostgreSQL local)
 
-### 1. Clonar e instalar dependências
-
-```bash
-git clone <repo-url>
-cd omnichannel-saas-backend
-npm install
-```
-
-### 2. Configurar variáveis de ambiente
+### 1. Instalar dependências
 
 ```bash
-cp .env.example .env
-# Edite o .env com suas credenciais
-```
-
-### 3. Criar o banco e rodar migrations
-
-```bash
-npx prisma migrate dev --name init
-```
-
-### 4. Gerar o Prisma Client
-
-```bash
+npm install --ignore-scripts
 npx prisma generate
 ```
 
-### 5. Popular o banco (seed)
+`--ignore-scripts` evita o download do Chromium do puppeteer, que só é necessário para conectar o WhatsApp via WPPConnect.
+
+### 2. Banco e variáveis de ambiente
 
 ```bash
-npm run prisma:seed
+docker compose up -d
+cp .env.example .env
 ```
 
-### 6. Iniciar o servidor
+No `.env`, troque `JWT_SECRET`, `JWT_REFRESH_SECRET` e `ASAAS_WEBHOOK_TOKEN` por valores aleatórios (o servidor não sobe sem os segredos JWT). `GROQ_API_KEY` é necessária para a sugestão de resposta.
+
+### 3. Migrations e dados
+
+```bash
+npx prisma migrate deploy
+npx tsx --env-file=.env prisma/seed.ts   # super admin e planos
+npm run prisma:seed:dev                  # empresa de teste com conversas, leads e produtos
+```
+
+### 4. Iniciar o servidor
 
 ```bash
 npm run dev
@@ -82,15 +75,19 @@ npm run dev
 
 O processo do servidor executa o envio de mensagens agendadas a cada minuto com node-cron.
 
-## Credenciais do Seed
+### Testes
 
-| Role        | Email                      | Senha    |
-| ----------- | -------------------------- | -------- |
-| SUPER_ADMIN | superadmin@omnichannel.com | super123 |
-| ADMIN       | admin@demo.com             | admin123 |
-| EMPLOYEE    | employee1@demo.com         | emp123   |
-| EMPLOYEE    | employee2@demo.com         | emp123   |
-| EMPLOYEE    | employee3@demo.com         | emp123   |
+```bash
+npm test
+```
+
+## Credenciais locais
+
+| Role        | Email                      | Senha                                  |
+| ----------- | -------------------------- | -------------------------------------- |
+| SUPER_ADMIN | superadmin@omnichannel.com | definida em `prisma/seed.ts`           |
+| ADMIN       | admin@zap2.test            | `DEV_PASSWORD` em `prisma/seed-dev.ts` |
+| EMPLOYEE    | atendente@zap2.test        | `DEV_PASSWORD` em `prisma/seed-dev.ts` |
 
 ## Rotas da API
 
@@ -121,6 +118,7 @@ Base URL: `http://localhost:3000/api`
 
 ### Messages
 
+- `POST /api/messages/suggest-reply` - Sugerir resposta com IA (Groq)
 - `POST /api/messages/send` - Enviar mensagem
 - `GET /api/messages/:conversationId` - Histórico de mensagens
 

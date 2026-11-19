@@ -36,7 +36,7 @@ function InsightCard({ title, value, icon: Icon, color, description }) {
           <Icon className="w-4 h-4 text-white" />
         </div>
         <div className="flex-1">
-          <p className="text-sm text-gray-600">{title}</p>
+          <p className="text-sm text-muted-foreground">{title}</p>
           <p className="text-xl font-bold">{value}</p>
           {description && (
             <p className="text-xs text-gray-500 mt-1">{description}</p>
@@ -148,7 +148,7 @@ export default function AiTemperatureControl() {
       <div className="space-y-6">
         <div className="flex items-center gap-2">
           <Brain className="w-5 h-5 animate-pulse" />
-          <h3 className="text-lg font-semibold">IA de Temperatura</h3>
+          <h3 className="text-lg font-semibold">Classificação automática</h3>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
@@ -166,13 +166,13 @@ export default function AiTemperatureControl() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg">
+          <div className="p-2 bg-primary rounded-lg">
             <Brain className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold">IA de Temperatura</h3>
-            <p className="text-sm text-gray-600">
-              Classificação inteligente de clientes baseada em comportamento
+            <h3 className="text-lg font-semibold">Classificação automática</h3>
+            <p className="text-sm text-muted-foreground">
+              Classifica os leads por regras de atividade e palavras-chave das conversas
             </p>
           </div>
         </div>
@@ -282,7 +282,7 @@ export default function AiTemperatureControl() {
           <div className="space-y-3">
             <h4 className="font-semibold flex items-center gap-2">
               <Target className="w-4 h-4" />
-              Recomendações da IA
+              Recomendações
             </h4>
             {insightsData?.recommendations?.length > 0 ? (
               insightsData.recommendations.map((rec, index) => (

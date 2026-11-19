@@ -5,28 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { X, Send, Search } from "lucide-react";
-import { format } from "date-fns";
+import { toast } from "sonner";
 
-export default function ScheduleMessageModal({ initial, onClose }) {
+export default function ScheduleMessageModal({ onClose }) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({
-    message: initial?.message || "",
-    scheduled_at: initial?.scheduled_at
-      ? format(new Date(initial.scheduled_at), "yyyy-MM-dd'T'HH:mm")
-      : "",
-    repeat: initial?.repeat || "none",
-    notes: initial?.notes || "",
-  });
+  const [content, setContent] = useState("");
+  const [sendAt, setSendAt] = useState("");
 
   const { data: conversations = [] } = useQuery({
     queryKey: ["conversations"],
@@ -43,7 +30,11 @@ export default function ScheduleMessageModal({ initial, onClose }) {
     mutationFn: (data) => scheduleApi.create(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["scheduled_messages"] });
+      toast.success("Mensagem agendada.");
       onClose();
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || "Erro ao agendar mensagem");
     },
   });
 
@@ -55,32 +46,25 @@ export default function ScheduleMessageModal({ initial, onClose }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!selected && !initial) return;
+    if (!selected) return;
     createMutation.mutate({
-      contact_id: selected?.id || initial?.contact_id,
-      contact_name: selected?.name || initial?.contact_name,
-      contact_phone: selected?.phone || initial?.contact_phone,
-      message: form.message,
-      scheduled_at: new Date(form.scheduled_at).toISOString(),
-      repeat: form.repeat,
-      notes: form.notes,
-      status: "pending",
+      conversationId: selected.id,
+      content,
+      sendAt: new Date(sendAt).toISOString(),
     });
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg">
-        {/* Header */}
+      <div className="bg-card rounded-xl shadow-menu w-full max-w-lg">
         <div className="flex items-center justify-between p-5 border-b">
-          <h2 className="font-bold text-lg">Agendar Mensagem</h2>
+          <h2 className="font-semibold text-lg">Agendar Mensagem</h2>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="w-4 h-4" />
           </Button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {/* Contact Picker */}
           <div className="space-y-2">
             <Label>Contato *</Label>
             {selected ? (
@@ -117,20 +101,21 @@ export default function ScheduleMessageModal({ initial, onClose }) {
                   />
                 </div>
                 {search && (
-                  <div className="border rounded-lg max-h-40 overflow-y-auto">
+                  <div className="rounded-lg shadow-field max-h-40 overflow-y-auto">
                     {filtered.length === 0 ? (
                       <p className="text-sm text-muted-foreground p-3 text-center">
                         Nenhum contato encontrado
                       </p>
                     ) : (
                       filtered.map((c) => (
-                        <div
+                        <button
+                          type="button"
                           key={c.id}
                           onClick={() => {
                             setSelected(c);
                             setSearch("");
                           }}
-                          className="flex items-center gap-2 p-3 hover:bg-muted cursor-pointer transition-colors"
+                          className="flex w-full items-center gap-2 p-3 text-left hover:bg-muted transition-colors"
                         >
                           <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center font-semibold text-primary text-xs">
                             {c.name?.charAt(0)?.toUpperCase()}
@@ -141,7 +126,7 @@ export default function ScheduleMessageModal({ initial, onClose }) {
                               {c.phone}
                             </p>
                           </div>
-                        </div>
+                        </button>
                       ))
                     )}
                   </div>
@@ -150,66 +135,24 @@ export default function ScheduleMessageModal({ initial, onClose }) {
             )}
           </div>
 
-          {/* Message */}
           <div className="space-y-2">
             <Label>Mensagem *</Label>
             <Textarea
               placeholder="Digite a mensagem que será enviada..."
-              value={form.message}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, message: e.target.value }))
-              }
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
               className="min-h-[100px]"
               required
             />
           </div>
 
-          {/* Date/Time + Repeat */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Data e Hora *</Label>
-              <Input
-                type="datetime-local"
-                value={form.scheduled_at}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, scheduled_at: e.target.value }))
-                }
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Repetição</Label>
-              <Select
-                value={form.repeat}
-                onValueChange={(v) => setForm((f) => ({ ...f, repeat: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sem repetição</SelectItem>
-                  <SelectItem value="daily">Diário</SelectItem>
-                  <SelectItem value="weekly">Semanal</SelectItem>
-                  <SelectItem value="monthly">Mensal</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Notes */}
           <div className="space-y-2">
-            <Label>
-              Notas internas{" "}
-              <span className="text-muted-foreground font-normal">
-                (opcional)
-              </span>
-            </Label>
+            <Label>Data e Hora *</Label>
             <Input
-              placeholder="Ex: Follow-up após demonstração"
-              value={form.notes}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, notes: e.target.value }))
-              }
+              type="datetime-local"
+              value={sendAt}
+              onChange={(e) => setSendAt(e.target.value)}
+              required
             />
           </div>
 
@@ -219,7 +162,7 @@ export default function ScheduleMessageModal({ initial, onClose }) {
             </Button>
             <Button
               type="submit"
-              disabled={createMutation.isPending || (!selected && !initial)}
+              disabled={createMutation.isPending || !selected}
               className="gap-2"
             >
               <Send className="w-4 h-4" />

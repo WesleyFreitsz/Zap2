@@ -15,7 +15,7 @@ export class DashboardService {
       closedConversations,
       totalMessages,
       totalProducts,
-      totalEmployees,
+      activeEmployees,
     ] = await Promise.all([
       prisma.conversation.count({ where: { companyId } }),
       prisma.conversation.count({ where: { companyId, status: "OPEN" } }),
@@ -24,7 +24,7 @@ export class DashboardService {
         where: { conversation: { companyId } },
       }),
       prisma.product.count({ where: { companyId } }),
-      prisma.user.count({ where: { companyId, role: "EMPLOYEE" } }),
+      prisma.user.count({ where: { companyId, role: "EMPLOYEE", isActive: true } }),
     ]);
 
     const conversationsByChannel = await prisma.conversation.groupBy({
@@ -39,7 +39,7 @@ export class DashboardService {
       closedConversations,
       totalMessages,
       totalProducts,
-      totalEmployees,
+      activeEmployees,
       conversationsByChannel: conversationsByChannel.map(
         (c: { channel: string; _count: { id: number } }) => ({
           channel: c.channel,
@@ -123,6 +123,7 @@ export class DashboardService {
       totalConversations,
       openConversations,
       activeEmployees,
+      totalProducts,
       recentConversations,
     ] = await Promise.all([
       prisma.message.count({ where: { conversation: { companyId } } }),
@@ -143,6 +144,7 @@ export class DashboardService {
       prisma.user.count({
         where: { companyId, role: "EMPLOYEE", isActive: true },
       }),
+      prisma.product.count({ where: { companyId, active: true } }),
       prisma.conversation.findMany({
         where: { companyId },
         orderBy: { updatedAt: "desc" },
@@ -168,6 +170,7 @@ export class DashboardService {
       totalConversations,
       openConversations,
       activeEmployees,
+      totalProducts,
       recentConversations,
       channelBreakdown: channelBreakdown.map(
         (c: { channel: string; _count: { id: number } }) => ({
