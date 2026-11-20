@@ -14,6 +14,7 @@ interface ServerEvents {
   "message:new": (event: { conversationId: string }) => void;
   "message:updated": (event: { conversationId: string }) => void;
   "conversation:updated": (event: { conversationId: string }) => void;
+  "conversation:typing": (event: { conversationId: string; typing: boolean }) => void;
 }
 
 let realtime: Server<Record<string, never>, ServerEvents> | undefined;
@@ -64,9 +65,8 @@ export function initRealtime(httpServer: HttpServer) {
   return io;
 }
 
-function emitToConversation(
-  event: keyof ServerEvents,
-  { id, companyId, assignedToId }: ConversationAudience,
+function conversationRooms(
+  { companyId, assignedToId }: ConversationAudience,
   previousAssigneeId?: string | null,
 ) {
   const rooms = [`company:${companyId}:staff`];
@@ -74,7 +74,19 @@ function emitToConversation(
   if (previousAssigneeId && previousAssigneeId !== assignedToId) {
     rooms.push(`user:${previousAssigneeId}`);
   }
-  realtime?.to(rooms).emit(event, { conversationId: id });
+  return rooms;
+}
+
+function emitToConversation(
+  event: "message:new" | "message:updated" | "conversation:updated",
+  conversation: ConversationAudience,
+  previousAssigneeId?: string | null,
+) {
+  realtime?.to(conversationRooms(conversation, previousAssigneeId)).emit(event, { conversationId: conversation.id });
+}
+
+export function emitConversationTyping(conversation: ConversationAudience, typing: boolean) {
+  realtime?.to(conversationRooms(conversation)).emit("conversation:typing", { conversationId: conversation.id, typing });
 }
 
 export function emitMessageCreated(conversation: ConversationAudience) {

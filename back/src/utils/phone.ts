@@ -5,3 +5,7 @@ export function normalizePhone(phone: string): string {
   }
   return digits;
 }
+
+export function withBrazilianNinthDigit(digits: string): string {
+  return digits.replace(/^55(\d{2})([6-9]\d{7})$/, "55$19$2");
+}

@@ -1,5 +1,5 @@
 import { rm } from "node:fs/promises";
-import { Prisma } from "@prisma/client";
+import { Prisma, type MessageStatus } from "@prisma/client";
 import { z } from "zod";
 import { env } from "../../config/env";
 import prisma from "../../config/prisma";
@@ -9,7 +9,7 @@ import { logger } from "../../utils/logger";
 import { saveMediaBuffer } from "../../utils/media";
 import { graphRequest } from "../meta/meta-graph.client";
 import { downloadInboundMedia } from "../meta/meta-media";
-import type { InboundMedia, InboundMessage } from "../meta/meta-webhook";
+import type { InboundMedia, InboundMessage, MessageEvent } from "../meta/meta-webhook";
 import { UserService } from "../users/user.service";
 
 const userService = new UserService();
@@ -140,6 +140,54 @@ export async function ingestInbound(inbound: InboundMessage): Promise<void> {
   if (inbound.media) {
     void attachInboundMedia(updated.messageId, updated.conversation, inbound.media, integration.accessTokenEncrypted);
   }
+}
+
+const statusTransitions: Record<MessageStatus, Prisma.MessageWhereInput> = {
+  SENT: { status: null },
+  DELIVERED: { OR: [{ status: null }, { status: { in: ["SENT", "FAILED"] } }] },
+  READ: { OR: [{ status: null }, { status: { not: "READ" } }] },
+  FAILED: { status: "SENT" },
+};
+
+export async function applyMessageEvent(event: MessageEvent): Promise<void> {
+  const conversationWhere: Prisma.ConversationWhereInput = {
+    channel: event.channel,
+    integration: { type: event.channel, externalAccountId: event.accountId, provider: "META", status: "ACTIVE" },
+  };
+  let messageWhere: Prisma.MessageWhereInput;
+  let data: Prisma.MessageUpdateManyMutationInput;
+  if (event.kind === "read") {
+    conversationWhere.contactRemoteId = event.contactRemoteId;
+    messageWhere = { sender: "USER", createdAt: { lte: event.watermark }, ...statusTransitions.READ };
+    data = { status: "READ" };
+  } else if (event.kind === "status") {
+    messageWhere = { externalId: event.externalId, ...statusTransitions[event.status] };
+    data = { status: event.status };
+  } else {
+    messageWhere = {
+      externalId: event.externalId,
+      OR: event.emoji === null ? [{ reaction: { not: null } }] : [{ reaction: null }, { reaction: { not: event.emoji } }],
+    };
+    data = { reaction: event.emoji };
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const conversations = await tx.conversation.findMany({
+      where: { ...conversationWhere, messages: { some: messageWhere } },
+      select: { id: true, companyId: true, assignedToId: true },
+      orderBy: { id: "asc" },
+    });
+    const changed: typeof conversations = [];
+    for (const conversation of conversations) {
+      const { count } = await tx.message.updateMany({
+        where: { ...messageWhere, conversationId: conversation.id, conversation: conversationWhere },
+        data,
+      });
+      if (count > 0) changed.push(conversation);
+    }
+    return changed;
+  });
+  for (const conversation of updated) emitMessageUpdated(conversation);
 }
 
 async function attachInboundMedia(

@@ -1,3 +1,4 @@
+import type { NextFunction, Request, Response } from "express";
 import fs from "fs";
 import multer from "multer";
 import path from "path";
@@ -52,3 +53,52 @@ export const uploadProductImage = multer({
   fileFilter,
   limits: { fileSize: 5 * 1024 * 1024 },
 }).single("imageFile");
+
+const CHAT_MEDIA_MAX_BYTES = 16 * 1024 * 1024;
+const CHAT_MEDIA_MIMES = new Set([
+  "application/pdf",
+  "application/zip",
+  "application/x-zip-compressed",
+  "text/plain",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+]);
+
+const chatMediaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: CHAT_MEDIA_MAX_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    const mimeType = file.mimetype.split(";")[0].trim().toLowerCase();
+    if (/^(image|video|audio)\//.test(mimeType) || CHAT_MEDIA_MIMES.has(mimeType)) {
+      cb(null, true);
+      return;
+    }
+    cb(new AppError("Tipo de arquivo não permitido", 415));
+  },
+}).single("file");
+
+export function uploadChatMedia(req: Request, res: Response, next: NextFunction): void {
+  chatMediaUpload(req, res, (error: unknown) => {
+    if (error instanceof multer.MulterError) {
+      next(
+        error.code === "LIMIT_FILE_SIZE"
+          ? new AppError("Arquivo maior que 16MB", 413)
+          : new AppError("Upload inválido", 400),
+      );
+      return;
+    }
+    if (error) {
+      next(error);
+      return;
+    }
+    if (!req.file) {
+      next(new AppError("Arquivo obrigatório", 400));
+      return;
+    }
+    next();
+  });
+}

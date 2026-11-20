@@ -5,7 +5,7 @@ import { env } from "../../config/env";
 import { AppError } from "../../utils/AppError";
 import { decryptSecret } from "../../utils/crypto";
 import { logger } from "../../utils/logger";
-import { wppConnectService } from "../integrations/wppconnect/wppconnect.service";
+import { wppConnectService, type SendMediaOptions } from "../integrations/wppconnect/wppconnect.service";
 import { graphRequest, listWhatsAppTemplates } from "../meta/meta-graph.client";
 import {
   buildTemplatePayload,
@@ -80,10 +80,12 @@ export async function prepareTemplate(conversation: Conversation, input: Templat
 async function sendWhatsApp(
   conversation: Conversation,
   { accountId, token }: NonNullable<Awaited<ReturnType<typeof getMetaSender>>>,
-  message:
+  message: (
     | { type: "text"; text: { preview_url: boolean; body: string } }
     | { type: "template"; template: TemplatePayload }
-    | { type: "image"; image: { link: string; caption: string } },
+    | { type: "image"; image: { link: string; caption: string } }
+    | { type: "reaction"; reaction: { message_id: string; emoji: string } }
+  ) & { context?: { message_id: string } },
 ) {
   const response = await graphRequest(`${encodeURIComponent(accountId)}/messages`, {
     token,
@@ -105,7 +107,11 @@ export async function sendTemplate(conversation: Conversation, template: Templat
   return sendWhatsApp(conversation, sender, { type: "template", template });
 }
 
-export async function sendText(conversation: Conversation, text: string): Promise<{ externalId: string | null }> {
+export async function sendText(
+  conversation: Conversation,
+  text: string,
+  replyToExternalId?: string | null,
+): Promise<{ externalId: string | null }> {
   const { companyId, channel, contactRemoteId, contactPhone } = conversation;
   const destination = contactRemoteId || contactPhone;
   const sender = await getMetaSender(conversation);
@@ -113,15 +119,20 @@ export async function sendText(conversation: Conversation, text: string): Promis
   if (!sender) {
     if (channel !== "WHATSAPP") throw new AppError("Canal sem integração ativa", 422);
     try {
-      return await wppConnectService.sendMessageAuto(companyId, destination, text);
+      return await wppConnectService.sendMessageAuto(companyId, destination, text, replyToExternalId || undefined);
     } catch (error) {
+      if (error instanceof AppError && error.statusCode < 500) throw error;
       logger.error("[ChannelSender] Falha no envio pelo WPPConnect", { error });
       throw new AppError("Failed to send WhatsApp message", 500);
     }
   }
 
   if (channel === "WHATSAPP") {
-    return sendWhatsApp(conversation, sender, { type: "text", text: { preview_url: false, body: text } });
+    return sendWhatsApp(conversation, sender, {
+      type: "text",
+      text: { preview_url: false, body: text },
+      ...(replyToExternalId ? { context: { message_id: replyToExternalId } } : {}),
+    });
   }
 
   return sendPageMessage(destination, sender.token, { text });
@@ -174,4 +185,44 @@ export async function sendImage(conversation: Conversation, { url, caption }: { 
     }
   }
   return image;
+}
+
+export async function sendMediaFile(
+  conversation: Conversation,
+  media: Omit<SendMediaOptions, "number" | "url">,
+): Promise<{ externalId: string | null }> {
+  const { companyId, channel, contactRemoteId, contactPhone } = conversation;
+  if (await getMetaSender(conversation)) throw new AppError("Tipo de mídia não suportado neste canal", 422);
+  if (channel !== "WHATSAPP") throw new AppError("Canal sem integração ativa", 422);
+  return wppConnectService.sendMediaAuto(companyId, { ...media, number: contactRemoteId || contactPhone });
+}
+
+export async function reactToMessage(conversation: Conversation, externalId: string, emoji: string | null) {
+  const sender = await getMetaSender(conversation);
+  if (conversation.channel !== "WHATSAPP") throw new AppError("Reação não suportada neste canal", 422);
+  if (sender) {
+    await sendWhatsApp(conversation, sender, {
+      type: "reaction",
+      reaction: { message_id: externalId, emoji: emoji ?? "" },
+    });
+    return;
+  }
+  await wppConnectService.reactToMessage(conversation.companyId, externalId, emoji);
+}
+
+async function assertWppConnectChannel(conversation: Conversation, action: string) {
+  if (conversation.channel !== "WHATSAPP" || (await getMetaSender(conversation))) {
+    throw new AppError(`${action} não suportado neste canal`, 422);
+  }
+}
+
+export async function editMessage(conversation: Conversation, externalId: string, content: string) {
+  await assertWppConnectChannel(conversation, "Editar mensagem");
+  await wppConnectService.editMessage(conversation.companyId, externalId, content);
+}
+
+export async function deleteMessage(conversation: Conversation, externalId: string) {
+  await assertWppConnectChannel(conversation, "Apagar mensagem");
+  const { companyId, contactRemoteId, contactPhone } = conversation;
+  await wppConnectService.deleteMessage(companyId, contactRemoteId || contactPhone, externalId);
 }

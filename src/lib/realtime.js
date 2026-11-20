@@ -15,6 +15,7 @@ export function useRealtime() {
     const apiUrl = new URL(apiClient.defaults.baseURL, window.location.origin);
     let disposed = false;
     let attemptedToken;
+    const typingTimers = new Map();
     const socket = io(apiUrl.origin, {
       path: `${apiUrl.pathname.replace(/\/$/, "")}/socket.io`,
       autoConnect: false,
@@ -56,6 +57,18 @@ export function useRealtime() {
     socket.on("message:updated", ({ conversationId }) =>
       queryClient.invalidateQueries({ queryKey: ["messages", conversationId] }));
     socket.on("conversation:updated", invalidateConversations);
+    socket.on("conversation:typing", ({ conversationId, typing }) => {
+      const key = ["typing", conversationId];
+      clearTimeout(typingTimers.get(conversationId));
+      typingTimers.delete(conversationId);
+      queryClient.setQueryData(key, typing);
+      if (typing) {
+        typingTimers.set(conversationId, setTimeout(() => {
+          typingTimers.delete(conversationId);
+          queryClient.setQueryData(key, false);
+        }, 6000));
+      }
+    });
     socket.on("connect", () => {
       invalidateConversations();
       queryClient.invalidateQueries({ queryKey: ["messages"] });
@@ -79,6 +92,10 @@ export function useRealtime() {
 
     return () => {
       disposed = true;
+      for (const [conversationId, timer] of typingTimers) {
+        clearTimeout(timer);
+        queryClient.setQueryData(["typing", conversationId], false);
+      }
       socket.disconnect();
     };
   }, [isAuthenticated, isLoadingAuth, queryClient, userId]);

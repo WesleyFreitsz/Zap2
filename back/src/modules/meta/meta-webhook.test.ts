@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import test from "node:test";
-import { parseMetaWebhook, verifyWebhookChallenge, verifyWebhookSignature } from "./meta-webhook";
+import { parseMetaEvents, parseMetaWebhook, verifyWebhookChallenge, verifyWebhookSignature } from "./meta-webhook";
 
 test("verifica o token e devolve o challenge original", () => {
   const query = { "hub.mode": "subscribe", "hub.verify_token": "verify", "hub.challenge": "001" };
@@ -20,7 +20,7 @@ test("confere a assinatura com os bytes originais e rejeita mudanças ou assinat
   assert.equal(verifyWebhookSignature(body, undefined, secret), false);
 });
 
-test("parseia texto e mídia do WhatsApp, aceita from_user_id e ignora statuses", () => {
+test("parseia texto e mídia do WhatsApp, aceita from_user_id e não vira mensagem o status nem a reação", () => {
   const value = {
     metadata: { phone_number_id: "phone" },
     contacts: [
@@ -32,6 +32,7 @@ test("parseia texto e mídia do WhatsApp, aceita from_user_id e ignora statuses"
       { id: "wa-2", from_user_id: "user-2", timestamp: "1700000000", type: "document", document: { id: "media", mime_type: "application/pdf", filename: "pedido.pdf", caption: "Pedido" } },
       { id: "wa-4", from_user_id: "user-2", timestamp: "1700000000", type: "sticker", sticker: { id: "sticker", mime_type: "image/webp" } },
       { id: "wa-3", type: "text" },
+      { id: "wa-5", from: "5511999999999", timestamp: "1700000000", type: "reaction", reaction: { message_id: "sent-1", emoji: "👍" } },
     ],
     statuses: [{ id: "sent-1", status: "delivered" }],
   };
@@ -75,3 +76,43 @@ for (const [object, channel] of [["page", "FACEBOOK"], ["instagram", "INSTAGRAM"
     ]);
   });
 }
+
+test("extrai status e reações do WhatsApp", () => {
+  const events = parseMetaEvents({
+    object: "whatsapp_business_account",
+    entry: [{ changes: [{ field: "messages", value: {
+      metadata: { phone_number_id: "phone" },
+      statuses: [{ id: "sent-1", status: "delivered" }, { id: "sent-2", status: "read" }, { id: "sent-3", status: "deleted" }],
+      messages: [
+        { id: "r-1", from: "5511", timestamp: "1700000000", type: "reaction", reaction: { message_id: "sent-1", emoji: "👍" } },
+        { id: "r-2", from: "5511", timestamp: "1700000000", type: "reaction", reaction: { message_id: "sent-2", emoji: "" } },
+        { id: "wa-1", from: "5511", timestamp: "1700000000", type: "text", text: { body: "Olá" } },
+      ],
+    } }] }],
+  });
+  const account = { channel: "WHATSAPP", accountId: "phone" };
+  assert.deepEqual(events, [
+    { ...account, kind: "status", externalId: "sent-1", status: "DELIVERED" },
+    { ...account, kind: "status", externalId: "sent-2", status: "READ" },
+    { ...account, kind: "reaction", externalId: "sent-1", emoji: "👍" },
+    { ...account, kind: "reaction", externalId: "sent-2", emoji: null },
+  ]);
+});
+
+test("extrai leitura, entrega e reação do Messenger", () => {
+  const event = { sender: { id: "contact" }, recipient: { id: "account" }, timestamp: 1700000000000 };
+  const events = parseMetaEvents({ object: "page", entry: [{ id: "account", messaging: [
+    { ...event, read: { watermark: 1700000000000 } },
+    { ...event, delivery: { mids: ["mid-1"], watermark: 1700000000000 } },
+    { ...event, reaction: { mid: "mid-1", action: "react", emoji: "❤️" } },
+    { ...event, reaction: { mid: "mid-2", action: "unreact" } },
+    { ...event, message: { mid: "text-1", text: "Oi" } },
+  ] }] });
+  const account = { channel: "FACEBOOK", accountId: "account" };
+  assert.deepEqual(events, [
+    { ...account, kind: "read", contactRemoteId: "contact", watermark: new Date(1700000000000) },
+    { ...account, kind: "status", externalId: "mid-1", status: "DELIVERED" },
+    { ...account, kind: "reaction", externalId: "mid-1", emoji: "❤️" },
+    { ...account, kind: "reaction", externalId: "mid-2", emoji: null },
+  ]);
+});

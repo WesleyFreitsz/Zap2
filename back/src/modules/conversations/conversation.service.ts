@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import prisma from "../../config/prisma";
 import { emitConversationUpdated, emitMessageCreated } from "../../realtime";
 import { AppError } from "../../utils/AppError";
+import { withBrazilianNinthDigit } from "../../utils/phone";
 import { LeadService } from "../leads/lead.service";
 import { UserService } from "../users/user.service";
 import { assertConversationAccess, conversationScope, type Actor } from "./conversation-access";
@@ -90,13 +91,28 @@ export class ConversationService {
       orderBy: { updatedAt: "desc" },
     });
 
-    return conversations
-      .filter((conversation) => !this.shouldHideConversation(conversation))
-      .map(({ integration, messages, ...conversation }) => this.formatConversation({
-        ...conversation,
-        provider: integration?.provider ?? null,
-        lastClientMessageAt: messages[0]?.createdAt ?? null,
-      }));
+    const visibleConversations = conversations.filter(
+      (conversation) => !this.shouldHideConversation(conversation),
+    );
+    if (visibleConversations.length === 0) return [];
+
+    const counts = await prisma.$queryRaw<Array<{ conversationId: string; unreadCount: number }>>`
+      SELECT m."conversationId", COUNT(*)::int AS "unreadCount"
+      FROM "messages" m
+      JOIN "conversations" c ON c.id = m."conversationId"
+      WHERE c.id = ANY(${visibleConversations.map(({ id }) => id)}::text[])
+        AND m.sender = 'CLIENT'
+        AND (c."lastReadAt" IS NULL OR m."createdAt" > c."lastReadAt")
+      GROUP BY m."conversationId"
+    `;
+    const unreadCounts = new Map(counts.map(({ conversationId, unreadCount }) => [conversationId, unreadCount]));
+
+    return visibleConversations.map(({ integration, messages, ...conversation }) => this.formatConversation({
+      ...conversation,
+      provider: integration?.provider ?? null,
+      lastClientMessageAt: messages[0]?.createdAt ?? null,
+      unreadCount: unreadCounts.get(conversation.id) ?? 0,
+    }));
   }
 
   async findById(id: string, companyId: string, userId: string, role: string) {
@@ -121,11 +137,48 @@ export class ConversationService {
       throw new AppError("Conversation not found", 404);
     }
 
-    const lastClientMessageAt = conversation.messages.reduce<Date | null>(
-      (last, message) => message.sender === "CLIENT" ? message.createdAt : last,
-      null,
-    );
-    return this.formatConversation({ ...conversation, provider: integration?.provider ?? null, lastClientMessageAt });
+    const { messages, lastReadAt } = conversation;
+    let lastClientMessageAt: Date | null = null;
+    let unreadCount = 0;
+    for (const message of messages) {
+      if (message.sender !== "CLIENT") continue;
+      lastClientMessageAt = message.createdAt;
+      if (lastReadAt === null || message.createdAt > lastReadAt) unreadCount++;
+    }
+    return this.formatConversation({ ...conversation, provider: integration?.provider ?? null, lastClientMessageAt, unreadCount });
+  }
+
+  async markAsRead(conversationId: string, companyId: string, actor: Actor) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, companyId },
+    });
+
+    if (!conversation) throw new AppError("Conversation not found", 404);
+    assertConversationAccess(conversation, actor);
+
+    const lastReadAt = new Date();
+    const { count } = await prisma.conversation.updateMany({
+      where: {
+        id: conversationId,
+        companyId,
+        ...conversationScope(actor),
+        OR: [{ lastReadAt: null }, { lastReadAt: { lt: lastReadAt } }],
+      },
+      data: { lastReadAt },
+    });
+    if (count > 0) emitConversationUpdated(conversation);
+  }
+
+  async remove(conversationId: string, companyId: string, actor: Actor) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, companyId },
+      select: { id: true, companyId: true, assignedToId: true },
+    });
+    if (!conversation) throw new AppError("Conversation not found", 404);
+    assertConversationAccess(conversation, actor);
+
+    await prisma.conversation.deleteMany({ where: { id: conversationId, companyId } });
+    emitConversationUpdated(conversation);
   }
 
   async assign(conversationId: string, toUserId: string, companyId: string) {
@@ -351,7 +404,7 @@ export class ConversationService {
     if (!raw) return "";
 
     const base = raw.includes("@") ? raw.split("@")[0] : raw;
-    const digits = base.replace(/\D/g, "");
+    const digits = withBrazilianNinthDigit(base.replace(/\D/g, ""));
 
     return digits || base;
   }
