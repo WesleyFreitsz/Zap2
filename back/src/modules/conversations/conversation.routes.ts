@@ -18,6 +18,7 @@ router.use(authMiddleware, subscriptionGuard);
 
 router.get("/", controller.findAll);
 router.get("/:id", controller.findById);
+router.post("/:id/read", controller.markAsRead);
 router.post("/:id/create-lead", controller.createLead);
 router.post("/", validate(createConversationSchema), controller.create);
 router.post(
@@ -34,5 +35,6 @@ router.post(
 );
 router.put("/:id", validate(updateConversationSchema), controller.update);
 router.patch("/:id/close", authorize("ADMIN", "EMPLOYEE"), controller.close);
+router.delete("/:id", authorize("ADMIN", "SUPER_ADMIN"), controller.remove);
 
 export default router;

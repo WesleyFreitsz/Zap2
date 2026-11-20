@@ -14,7 +14,7 @@ export const enforcePlanLimits = async (
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       include: {
-        _count: { select: { users: true, integrations: { where: { type: "WHATSAPP" } } } },
+        _count: { select: { users: true, integrations: { where: { type: "WHATSAPP", status: "ACTIVE" } } } },
       },
     });
 
@@ -85,7 +85,7 @@ export const checkNumberLimit = async (
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      include: { _count: { select: { integrations: { where: { type: "WHATSAPP" } } } } },
+      include: { _count: { select: { integrations: { where: { type: "WHATSAPP", status: "ACTIVE" } } } } },
     });
     if (!company) return next();
 

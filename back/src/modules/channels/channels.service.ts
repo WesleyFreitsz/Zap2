@@ -55,11 +55,11 @@ async function checkMetaChannels(
 ) {
   const accounts = await db.integration.findMany({
     where: { OR: channels.map(({ type, externalAccountId }) => ({ type, externalAccountId })) },
-    select: { companyId: true, type: true },
+    select: { companyId: true, type: true, status: true },
   });
 
   if (accounts.some((account) => account.companyId !== companyId)) throw accountConflict();
-  if (!channels.some(({ type }) => type === "WHATSAPP") || accounts.some(({ type }) => type === "WHATSAPP")) {
+  if (!channels.some(({ type }) => type === "WHATSAPP") || accounts.some(({ type, status }) => type === "WHATSAPP" && status === "ACTIVE")) {
     return;
   }
 
@@ -67,7 +67,7 @@ async function checkMetaChannels(
     where: { id: companyId },
     select: {
       plan: true,
-      _count: { select: { integrations: { where: { type: "WHATSAPP" } } } },
+      _count: { select: { integrations: { where: { type: "WHATSAPP", status: "ACTIVE" } } } },
     },
   });
   if (!company) throw new AppError("Empresa não encontrada", 404);

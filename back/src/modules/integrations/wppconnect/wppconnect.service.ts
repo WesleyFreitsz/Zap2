@@ -1,21 +1,128 @@
+import { z } from "zod";
 import * as wppconnect from "@wppconnect-team/wppconnect";
 import { rmSync, existsSync } from "fs";
 import { join } from "path";
 import prisma from "../../../config/prisma";
-import { emitMessageCreated } from "../../../realtime";
+import {
+  emitConversationTyping,
+  emitMessageCreated,
+  emitMessageUpdated,
+} from "../../../realtime";
 import { AppError } from "../../../utils/AppError";
 import { logger } from "../../../utils/logger";
 import { normalizePhone } from "../../../utils/phone";
-import { isLikelyBase64Payload, saveBase64Media } from "../../../utils/media";
+import { isLikelyBase64Payload, saveBase64Media, saveMediaBuffer } from "../../../utils/media";
+import { getWhatsAppChatId, getWhatsAppMessageKey } from "../../messages/message-rules";
 
 export interface SendMediaOptions {
   number: string;
-  type: "image" | "video" | "audio" | "document";
+  type: "image" | "video" | "audio" | "document" | "sticker";
   url?: string;
   base64?: string;
   caption?: string;
   fileName?: string;
+  mimeType?: string;
+  quotedMsg?: string;
 }
+
+const IGNORED_MESSAGE_TYPES = new Set(["e2e_notification", "notification_template", "protocol", "revoked", "gp2", "call_log"]);
+const INCOMING_MEDIA_TYPES: Record<string, string> = {
+  image: "image",
+  sticker: "sticker",
+  video: "video",
+  ptt: "audio",
+  audio: "audio",
+  document: "document",
+};
+const SAVED_STICKERS_SCRIPT = `(async () => {
+  const db = await new Promise((resolve, reject) => {
+    const request = indexedDB.open("model-storage");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  const readAll = (storeName) => new Promise((resolve) => {
+    if (!db.objectStoreNames.contains(storeName)) return resolve([]);
+    const request = db.transaction(storeName, "readonly").objectStore(storeName).getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => resolve([]);
+  });
+  const favorites = (await readAll("favorite-stickers")).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const recents = (await readAll("recent-stickers")).sort((a, b) => (b.weight || 0) - (a.weight || 0));
+  db.close();
+
+  const seen = new Set();
+  const entries = [];
+  for (const [source, list] of [["favorite", favorites], ["recent", recents]]) {
+    for (const record of list) {
+      const sticker = record.sticker;
+      if (!sticker?.filehash || !sticker.directPath || seen.has(sticker.filehash)) continue;
+      seen.add(sticker.filehash);
+      entries.push({ source, sticker });
+    }
+  }
+
+  const errors = [];
+  const download = async ({ source, sticker }) => {
+    try {
+      const { LruMediaStore, MediaBlobCache, StickerModel } = WPP.whatsapp;
+      const mimetype = sticker.mimetype || "image/webp";
+      const fromCache = async () => {
+        const stored = LruMediaStore?.get ? await LruMediaStore.get(sticker.filehash).catch(() => null) : null;
+        if (stored) return new Blob([stored instanceof ArrayBuffer || ArrayBuffer.isView(stored) ? stored : stored.buffer ?? stored], { type: mimetype });
+        if (MediaBlobCache?.has?.(sticker.filehash)) return MediaBlobCache.get(sticker.filehash);
+        return null;
+      };
+      let blob = await fromCache();
+      let stage = "cache";
+      if (!blob) {
+        const model = new StickerModel({ ...sticker, id: sticker.filehash });
+        const fetchMedia = () => model.downloadMedia({ downloadEvenIfExpensive: true, rmrReason: 1, isUserInitiated: true });
+        await Promise.race([fetchMedia(), new Promise((resolve) => setTimeout(resolve, 3000))]);
+        blob = (await fromCache()) || model.mediaData?.mediaBlob?.forceToBlob?.() || null;
+        const url = !blob && model.mediaData?.renderableUrl;
+        if (url) blob = await fetch(url).then((response) => response.blob());
+        stage = String(model.mediaData?.mediaStage) + "/" + source;
+      }
+      if (!blob) throw new Error("sem mídia após download (" + stage + ")");
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = "";
+      for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+      }
+      return { id: sticker.filehash, source, dataUrl: "data:" + (blob.type || sticker.mimetype || "image/webp") + ";base64," + btoa(binary) };
+    } catch (error) {
+      errors.push(String(error?.message || error));
+      return null;
+    }
+  };
+
+  const runBatches = async (list) => {
+    const found = [];
+    for (let index = 0; index < list.length; index += 10) {
+      const batch = await Promise.all(list.slice(index, index + 10).map(download));
+      found.push(...batch.filter(Boolean));
+    }
+    return found;
+  };
+  const selected = entries.slice(0, 90);
+  const result = await runBatches(selected);
+  const order = new Map(selected.map(({ sticker }, index) => [sticker.filehash, index]));
+  result.sort((a, b) => order.get(a.id) - order.get(b.id));
+  return { stickers: result, total: entries.length, errors: errors.slice(0, 3) };
+})()`;
+const savedStickersSchema = z.array(
+  z.object({ id: z.string(), source: z.enum(["favorite", "recent"]), dataUrl: z.string().startsWith("data:image/") }),
+);
+type SavedSticker = z.infer<typeof savedStickersSchema>[number];
+const SAVED_STICKERS_TTL_MS = 2 * 60 * 1000;
+const savedStickersCache = new Map<string, { loadedAt: number; stickers: SavedSticker[] }>();
+const savedStickersInFlight = new Map<string, Promise<SavedSticker[]>>();
+const savedStickersResultSchema = z.object({
+  stickers: savedStickersSchema,
+  total: z.number(),
+  errors: z.array(z.string()),
+});
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 
 // In-memory map: integrationId -> WPPConnect client (connected sessions)
 const sessions = new Map<string, wppconnect.Whatsapp>();
@@ -47,6 +154,28 @@ function cleanupTokenFolder(sessionName: string): void {
     );
   }
 }
+
+function toSendError(error: unknown): AppError {
+  if (error instanceof Error && error.message.includes("No LID for user")) {
+    return new AppError(
+      "O WhatsApp ainda não libera conversa nova com este número. Peça para o contato mandar a primeira mensagem ou salve-o na agenda do celular conectado.",
+      422,
+    );
+  }
+  return new AppError("Failed to send WhatsApp message", 500);
+}
+
+type AckMessageStatus = "SENT" | "DELIVERED" | "READ" | "FAILED";
+
+const ACK_ALLOWED_PREVIOUS_STATUS: Record<
+  AckMessageStatus,
+  AckMessageStatus[]
+> = {
+  SENT: [],
+  DELIVERED: ["SENT", "FAILED"],
+  READ: ["SENT", "DELIVERED", "FAILED"],
+  FAILED: ["SENT"],
+};
 
 export class WppConnectService {
   // ─── Shared create helper ─────────────────────────────────────
@@ -347,13 +476,14 @@ export class WppConnectService {
     companyId: string,
     phone: string,
     text: string,
+    quotedMsg?: string,
   ): Promise<{ externalId: string | null }> {
     await this.getIntegration(integrationId, companyId);
     const client = this.getClient(integrationId);
-    const chatId = this.resolveChatId(phone);
+    const chatId = await this.resolveChatId(client, phone);
 
     try {
-      const result = await client.sendText(chatId, text);
+      const result = await client.sendText(chatId, text, quotedMsg ? { quotedMsg } : undefined);
       const externalId =
         typeof (result as any)?.id === "string"
           ? (result as any).id
@@ -366,7 +496,7 @@ export class WppConnectService {
       logger.error(
         `[WPPConnect] Failed to send message to ${chatId}: ${(error as Error).message}`,
       );
-      throw new AppError("Failed to send WhatsApp message", 500);
+      throw toSendError(error);
     }
   }
 
@@ -378,54 +508,32 @@ export class WppConnectService {
   ): Promise<{ externalId: string | null }> {
     await this.getIntegration(integrationId, companyId);
     const client = this.getClient(integrationId);
-    const chatId = this.resolveChatId(options.number);
+    const chatId = await this.resolveChatId(client, options.number);
+
+    const source = options.url || options.base64;
+    if (!source) {
+      throw new AppError("Either url or base64 must be provided for media", 400);
+    }
+    const content =
+      options.base64 && !options.base64.startsWith("data:") && options.mimeType
+        ? `data:${options.mimeType};base64,${options.base64}`
+        : source;
 
     try {
-      let result: any;
-      const mediaSource = options.url || options.base64;
-      if (!mediaSource) {
-        throw new AppError(
-          "Either url or base64 must be provided for media",
-          400,
-        );
-      }
-
-      switch (options.type) {
-        case "image":
-          result = await client.sendImage(
-            chatId,
-            mediaSource,
-            options.fileName || "image",
-            options.caption || "",
-          );
-          break;
-        case "video":
-          result = await client.sendVideoAsGif(
-            chatId,
-            mediaSource,
-            options.fileName || "video",
-            options.caption || "",
-          );
-          break;
-        case "audio":
-          result = await client.sendPtt(chatId, mediaSource);
-          break;
-        case "document":
-          result = await client.sendFile(
-            chatId,
-            mediaSource,
-            options.fileName || "document",
-            options.caption || "",
-          );
-          break;
-        default:
-          result = await client.sendFile(
-            chatId,
-            mediaSource,
-            options.fileName || "file",
-            options.caption || "",
-          );
-      }
+      const fileOptions = {
+        type: options.type,
+        filename: options.fileName || options.type,
+        caption: options.type === "audio" ? undefined : options.caption || undefined,
+        mimetype: options.mimeType,
+        quotedMsg: options.quotedMsg,
+        ...(options.type === "audio" ? { isPtt: true } : {}),
+      };
+      const result: { id?: string | { _serialized?: string } } | undefined =
+        options.type === "sticker"
+          ? options.mimeType === "image/gif"
+            ? await client.sendImageAsStickerGif(chatId, content, { quotedMsg: options.quotedMsg })
+            : await client.sendImageAsSticker(chatId, content, { quotedMsg: options.quotedMsg })
+          : await client.sendFile(chatId, content, fileOptions);
 
       const externalId =
         typeof result?.id === "string"
@@ -448,9 +556,10 @@ export class WppConnectService {
     companyId: string,
     phone: string,
     text: string,
+    quotedMsg?: string,
   ): Promise<{ externalId: string | null }> {
     const integrationId = await this.pickConnectedSession(companyId);
-    return this.sendMessage(integrationId, companyId, phone, text);
+    return this.sendMessage(integrationId, companyId, phone, text, quotedMsg);
   }
 
   async sendMediaAuto(
@@ -459,6 +568,67 @@ export class WppConnectService {
   ): Promise<{ externalId: string | null }> {
     const integrationId = await this.pickConnectedSession(companyId);
     return this.sendMedia(integrationId, companyId, options);
+  }
+
+  async reactToMessage(companyId: string, externalId: string, emoji: string | null): Promise<void> {
+    const client = this.getClient(await this.pickConnectedSession(companyId));
+    try {
+      await client.sendReactionToMessage(externalId, emoji ?? false);
+    } catch (error) {
+      logger.error(`[WPPConnect] Failed to react to ${externalId}: ${(error as Error).message}`);
+      throw new AppError("Failed to react to WhatsApp message", 500);
+    }
+  }
+
+  async editMessage(companyId: string, externalId: string, content: string): Promise<void> {
+    const client = this.getClient(await this.pickConnectedSession(companyId));
+    try {
+      await client.editMessage(externalId, content);
+    } catch (error) {
+      logger.error(`[WPPConnect] Failed to edit ${externalId}: ${(error as Error).message}`);
+      throw new AppError("Failed to edit WhatsApp message", 500);
+    }
+  }
+
+  async listSavedStickers(companyId: string): Promise<SavedSticker[]> {
+    const cached = savedStickersCache.get(companyId);
+    if (cached && Date.now() - cached.loadedAt < SAVED_STICKERS_TTL_MS) return cached.stickers;
+    const pending = savedStickersInFlight.get(companyId);
+    if (pending) return pending;
+    const loading = this.loadSavedStickers(companyId)
+      .then((stickers) => {
+        savedStickersCache.set(companyId, { loadedAt: Date.now(), stickers });
+        return stickers;
+      })
+      .finally(() => savedStickersInFlight.delete(companyId));
+    savedStickersInFlight.set(companyId, loading);
+    return loading;
+  }
+
+  private async loadSavedStickers(companyId: string): Promise<SavedSticker[]> {
+    const client = this.getClient(await this.pickConnectedSession(companyId));
+    try {
+      const result = savedStickersResultSchema.parse(await client.page.evaluate(SAVED_STICKERS_SCRIPT));
+      if (result.errors.length || result.stickers.length < result.total) {
+        logger.info(`[WPPConnect] Saved stickers: ${result.stickers.length}/${result.total} baixadas; erros: ${result.errors.join(" | ")}`);
+      }
+      return result.stickers;
+    } catch (error) {
+      logger.error(`[WPPConnect] Failed to list saved stickers: ${(error as Error).message}`);
+      throw new AppError("Não foi possível carregar as figurinhas do WhatsApp", 502);
+    }
+  }
+
+  async deleteMessage(companyId: string, destination: string, externalId: string): Promise<void> {
+    const client = this.getClient(await this.pickConnectedSession(companyId));
+    const chatId = getWhatsAppChatId(externalId) ?? await this.resolveChatId(client, destination);
+    try {
+      const deleted = await client.deleteMessage(chatId, externalId);
+      if (deleted === false) throw new Error("deleteMessage returned false");
+    } catch (error) {
+      logger.error(`[WPPConnect] Failed to delete ${externalId}: ${(error as Error).message}`);
+      throw new AppError("Failed to delete WhatsApp message", 500);
+    }
   }
 
   // ─── Restore Sessions on Startup ───────────────────────────
@@ -584,12 +754,23 @@ export class WppConnectService {
         if (rawFrom === "status@broadcast" || rawFrom.endsWith("@broadcast")) {
           return;
         }
+        if (IGNORED_MESSAGE_TYPES.has(message.type)) return;
+
+        client.subscribePresence(rawFrom).catch(() => {});
 
         logger.info(
           `[WPPConnect] Incoming message from ${rawFrom}: ${(message.body || "").substring(0, 50)}`,
         );
 
         const identityCandidates = this.getContactCandidates(message);
+        if (rawFrom.endsWith("@lid")) {
+          const entry = await client.getPnLidEntry(rawFrom).catch((err: Error) => {
+            logger.warn(`[WPPConnect] getPnLidEntry failed for ${rawFrom}: ${err.message}`);
+            return null;
+          });
+          const phoneId = entry?.phoneNumber?._serialized;
+          if (phoneId) identityCandidates.unshift(phoneId);
+        }
         const contactRemoteId =
           this.getPreferredRemoteId(identityCandidates) || rawFrom;
         const phoneCandidates = identityCandidates.flatMap((candidate) =>
@@ -607,17 +788,6 @@ export class WppConnectService {
           typeof message.id === "string"
             ? message.id
             : message.id?._serialized || String(message.id || "");
-        const mediaType = this.getIncomingMediaType(message.type);
-        const mediaPayload = mediaType
-          ? await this.resolveIncomingMedia(client, message, companyId)
-          : null;
-        let content = this.getIncomingContent(message, mediaType);
-        const avatarUrl = await this.resolveContactAvatar(
-          client,
-          message,
-          contactRemoteId,
-        );
-
         if (phoneCandidates.length === 0) return;
 
         if (externalId) {
@@ -626,6 +796,12 @@ export class WppConnectService {
           });
           if (existing) return;
         }
+
+        const mediaType = this.getIncomingMediaType(message);
+        const mediaPayload = mediaType
+          ? await this.resolveIncomingMedia(client, message, companyId, mediaType)
+          : null;
+        const content = this.getIncomingContent(message, mediaType);
 
         let conversation = await prisma.conversation.findFirst({
           where: {
@@ -643,6 +819,10 @@ export class WppConnectService {
             ],
           },
         });
+
+        const avatarUrl = conversation?.contactAvatarUrl?.startsWith("/uploads/")
+          ? null
+          : await this.resolveContactAvatar(client, message, contactRemoteId, companyId);
 
         if (!conversation) {
           const { UserService } = await import("../../users/user.service");
@@ -680,9 +860,16 @@ export class WppConnectService {
           },
         });
 
+        const quotedId =
+          this.serializeWid(message.quotedMsgId) || String(message.quotedStanzaID || "");
+        const quoted = quotedId
+          ? await this.findMessageByExternalId(quotedId, companyId)
+          : null;
+
         await prisma.message.create({
           data: {
             conversationId: conversation.id,
+            replyToId: quoted?.conversation.id === conversation.id ? quoted.id : undefined,
             sender: "CLIENT",
             content,
             externalId: externalId || undefined,
@@ -700,7 +887,11 @@ export class WppConnectService {
             where: {
               id: conversation.leadId,
               companyId,
-              OR: [{ avatarUrl: null }, { avatarUrl: "" }],
+              OR: [
+                { avatarUrl: null },
+                { avatarUrl: "" },
+                { avatarUrl: { startsWith: "https://pps.whatsapp.net" } },
+              ],
             },
             data: { avatarUrl },
           });
@@ -715,9 +906,152 @@ export class WppConnectService {
         );
       }
     });
+
+    client.onAck(async (ack) => {
+      try {
+        const externalId = this.serializeWid(ack.id);
+        logger.info(`[WPPConnect] Ack ${ack.ack} for ${externalId}`);
+        const status = this.mapAckToStatus(ack.ack);
+        if (!status || !externalId) return;
+
+        const message = await this.findMessageByExternalId(externalId, companyId);
+        if (!message) return;
+
+        const result = await prisma.message.updateMany({
+          where: {
+            id: message.id,
+            OR: [
+              ...(status === "FAILED" ? [] : [{ status: null }]),
+              { status: { in: ACK_ALLOWED_PREVIOUS_STATUS[status] } },
+            ],
+          },
+          data: { status },
+        });
+        if (result.count > 0) emitMessageUpdated(message.conversation);
+      } catch (err) {
+        logger.error(`[WPPConnect] Error handling ack: ${(err as Error).message}`);
+      }
+    });
+
+    client.onReactionMessage(async (data) => {
+      try {
+        if (this.serializeWid(data.id).startsWith("true_")) return;
+        const message = await this.findMessageByExternalId(this.serializeWid(data.msgId), companyId);
+        if (!message) return;
+
+        await prisma.message.update({
+          where: { id: message.id },
+          data: { reaction: data.reactionText || null },
+        });
+        emitMessageUpdated(message.conversation);
+      } catch (err) {
+        logger.error(
+          `[WPPConnect] Error handling reaction: ${(err as Error).message}`,
+        );
+      }
+    });
+
+    client.onRevokedMessage(async (data) => {
+      try {
+        const message = await this.findMessageByExternalId(this.serializeWid(data.refId), companyId);
+        if (!message) return;
+
+        const { count } = await prisma.message.updateMany({
+          where: { id: message.id, deletedAt: null },
+          data: { deletedAt: new Date() },
+        });
+        if (count > 0) emitMessageUpdated(message.conversation);
+      } catch (err) {
+        logger.error(`[WPPConnect] Error handling revoke: ${(err as Error).message}`);
+      }
+    });
+
+    client.onMessageEdit(async (data) => {
+      try {
+        const edited: { body?: string; caption?: string; id?: unknown } | undefined = data.msg;
+        const content = String(edited?.body || edited?.caption || "").trim();
+        if (!content) return;
+        const message = await this.findMessageByExternalId(
+          this.serializeWid(data.id) || this.serializeWid(edited?.id),
+          companyId,
+        );
+        if (!message) return;
+
+        const { count } = await prisma.message.updateMany({
+          where: { id: message.id, deletedAt: null, NOT: { content } },
+          data: { content, editedAt: new Date() },
+        });
+        if (count > 0) emitMessageUpdated(message.conversation);
+      } catch (err) {
+        logger.error(`[WPPConnect] Error handling edit: ${(err as Error).message}`);
+      }
+    });
+
+    client.onPresenceChanged(async (event) => {
+      try {
+        if (!event.isUser) return;
+        const contactId = this.serializeWid(event.id);
+        if (!contactId) return;
+
+        const conversation = await prisma.conversation.findFirst({
+          where: {
+            companyId,
+            status: { notIn: ["CLOSED"] },
+            channel: "WHATSAPP",
+            NOT: { integration: { is: { provider: "META" } } },
+            OR: [
+              ...this.getPhoneCandidates(contactId).map((candidate) => ({
+                contactPhone: candidate,
+              })),
+              { contactRemoteId: contactId },
+            ],
+          },
+          select: { id: true, companyId: true, assignedToId: true },
+        });
+        if (!conversation) return;
+
+        emitConversationTyping(
+          conversation,
+          event.state === "composing" || event.state === "recording",
+        );
+      } catch (err) {
+        logger.error(
+          `[WPPConnect] Error handling presence: ${(err as Error).message}`,
+        );
+      }
+    });
   }
 
-  private resolveChatId(phone: string): string {
+  private mapAckToStatus(ack: number): AckMessageStatus | null {
+    if (ack < 0) return "FAILED";
+    if (ack === 1) return "SENT";
+    if (ack === 2) return "DELIVERED";
+    if (ack === 3 || ack === 4) return "READ";
+    return null;
+  }
+
+  private async findMessageByExternalId(externalId: string, companyId: string) {
+    if (!externalId) return null;
+    const select = {
+      id: true,
+      conversation: { select: { id: true, companyId: true, assignedToId: true } },
+    } as const;
+    const exact = await prisma.message.findFirst({
+      where: { externalId, conversation: { companyId } },
+      select,
+    });
+    if (exact) return exact;
+
+    const key = getWhatsAppMessageKey(externalId);
+    if (!key) return null;
+    return prisma.message.findFirst({
+      where: { externalId: { endsWith: `_${key}` }, conversation: { companyId } },
+      orderBy: { createdAt: "desc" },
+      select,
+    });
+  }
+
+  private async resolveChatId(client: wppconnect.Whatsapp, phone: string): Promise<string> {
     const value = String(phone || "").trim();
     if (!value) {
       throw new AppError("Invalid WhatsApp destination", 400);
@@ -725,7 +1059,25 @@ export class WppConnectService {
     if (value.includes("@")) {
       return value;
     }
-    return `${normalizePhone(value)}@c.us`;
+    const chatId = `${normalizePhone(value)}@c.us`;
+    // acerta o 9º dígito e usa o LID quando o WhatsApp o fornece
+    const found = await client.page
+      .evaluate(async (id: string) => {
+        type SerializableWid = { _serialized: string } | undefined;
+        const { WPP } = globalThis as unknown as {
+          WPP: { contact: { queryWidExists: (id: string) => Promise<{ wid: SerializableWid; lid?: SerializableWid } | null> } };
+        };
+        const result = await WPP.contact.queryWidExists(id);
+        return result ? { wid: result.wid?._serialized ?? null, lid: result.lid?._serialized ?? null } : null;
+      }, chatId)
+      .catch((error: Error) => {
+        logger.warn(`[WPPConnect] queryWidExists failed for ${chatId}: ${error.message}`);
+        return undefined;
+      });
+    if (found === null) {
+      throw new AppError("Este número não tem WhatsApp", 422);
+    }
+    return found?.lid || found?.wid || chatId;
   }
 
   private serializeWid(value: any): string {
@@ -815,12 +1167,14 @@ export class WppConnectService {
     );
   }
 
-  private getIncomingMediaType(type: string): string | null {
-    if (type === "image") return "image";
-    if (type === "video") return "video";
-    if (type === "ptt" || type === "audio") return "audio";
-    if (type === "document") return "document";
-    return null;
+  private getIncomingMediaType(message: any): string | null {
+    const type = String(message.type || "");
+    const mediaType = INCOMING_MEDIA_TYPES[type];
+    if (mediaType) return mediaType;
+    if (type !== "chat") {
+      logger.info(`[WPPConnect] Unhandled incoming message type: ${type || "(empty)"}`);
+    }
+    return message.mediaKey || message.isMedia ? "document" : null;
   }
 
   private getMediaPlaceholder(
@@ -846,22 +1200,45 @@ export class WppConnectService {
     client: wppconnect.Whatsapp,
     message: any,
     contactRemoteId: string,
+    companyId: string,
   ): Promise<string | null> {
-    const thumb =
+    let remoteUrl: string | null =
       message.sender?.profilePicThumbObj?.eurl ||
       message.sender?.profilePicThumbObj?.imgFull ||
-      message.sender?.profilePicThumbObj?.img;
+      message.sender?.profilePicThumbObj?.img ||
+      null;
 
-    if (thumb) {
-      return thumb;
+    if (!remoteUrl && contactRemoteId) {
+      const pic = await client.getProfilePicFromServer(contactRemoteId).catch(() => null);
+      remoteUrl = pic?.eurl || pic?.imgFull || pic?.img || null;
     }
 
-    if (!contactRemoteId) return null;
+    return remoteUrl ? this.saveContactAvatar(remoteUrl, companyId) : null;
+  }
 
+  private async saveContactAvatar(remoteUrl: string, companyId: string): Promise<string | null> {
     try {
-      const pic = await client.getProfilePicFromServer(contactRemoteId);
-      return pic?.eurl || pic?.imgFull || pic?.img || null;
-    } catch {
+      const url = new URL(remoteUrl);
+      if (url.protocol !== "https:" || !url.hostname.endsWith(".whatsapp.net")) return null;
+
+      const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(10_000) });
+      const mimeType = response.headers.get("content-type")?.split(";")[0].trim() || "image/jpeg";
+      if (!response.ok || !mimeType.startsWith("image/")) {
+        await response.body?.cancel();
+        return null;
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (!buffer.byteLength || buffer.byteLength > AVATAR_MAX_BYTES) return null;
+
+      const saved = await saveMediaBuffer({
+        buffer,
+        directory: `avatars/${companyId}`,
+        fileName: "avatar",
+        mimeType,
+      });
+      return saved.url;
+    } catch (error) {
+      logger.warn(`[WPPConnect] Failed to save contact avatar: ${(error as Error).message}`);
       return null;
     }
   }
@@ -870,6 +1247,7 @@ export class WppConnectService {
     client: wppconnect.Whatsapp,
     message: any,
     companyId: string,
+    mediaType: string,
   ): Promise<{
     mediaType: string;
     mediaUrl: string;
@@ -878,9 +1256,6 @@ export class WppConnectService {
     fileSize: number;
   } | null> {
     try {
-      const mediaType = this.getIncomingMediaType(message.type);
-      if (!mediaType) return null;
-
       const base64 = await client.downloadMedia(message.id || message);
       if (!base64) return null;
 
@@ -926,7 +1301,7 @@ export class WppConnectService {
   private async enforcePlanLimit(companyId: string): Promise<void> {
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      include: { _count: { select: { integrations: { where: { type: "WHATSAPP" } } } } },
+      include: { _count: { select: { integrations: { where: { type: "WHATSAPP", status: "ACTIVE" } } } } },
     });
 
     if (!company) throw new AppError("Company not found", 404);

@@ -28,6 +28,13 @@ export default function Conversations() {
       ) || null,
     [conversations, selectedConversationId],
   );
+  const leadConversations = useMemo(
+    () =>
+      selectedConversation?.leadId
+        ? conversations.filter(({ leadId }) => leadId === selectedConversation.leadId)
+        : [],
+    [conversations, selectedConversation],
+  );
 
   const { data: messages = [] } = useQuery({
     queryKey: ["messages", selectedConversationId],
@@ -101,8 +108,8 @@ export default function Conversations() {
   }, [messages, playNotificationSound, selectedConversationId]);
 
   return (
-    <div className="h-screen flex">
-      <div className="w-[340px] shrink-0">
+    <div className="h-screen flex min-w-0">
+      <div className="w-72 xl:w-[340px] shrink-0">
         <ContactList
           conversations={conversations}
           selectedId={selectedConversationId}
@@ -120,7 +127,13 @@ export default function Conversations() {
           }
         />
       </div>
-      <ChatPanel conversation={selectedConversation} messages={messages} />
+      <ChatPanel
+        conversation={selectedConversation}
+        messages={messages}
+        leadConversations={leadConversations}
+        onSelectConversation={setSelectedConversationId}
+        onConversationDeleted={() => setSelectedConversationId(null)}
+      />
     </div>
   );
 }

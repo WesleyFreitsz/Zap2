@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
-    "@wppconnect-team/wppconnect": "^1.41.1",
+    "@wppconnect-team/wppconnect": "^2.4.6",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

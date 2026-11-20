@@ -1,15 +1,15 @@
 import { rm } from "node:fs/promises";
-import { Prisma } from "@prisma/client";
+import { Prisma, type MessageStatus } from "@prisma/client";
 import { z } from "zod";
 import { env } from "../../config/env";
 import prisma from "../../config/prisma";
-import { emitMessageCreated } from "../../realtime";
+import { emitMessageCreated, emitMessageUpdated } from "../../realtime";
 import { decryptSecret } from "../../utils/crypto";
 import { logger } from "../../utils/logger";
 import { saveMediaBuffer } from "../../utils/media";
 import { graphRequest } from "../meta/meta-graph.client";
 import { downloadInboundMedia } from "../meta/meta-media";
-import type { InboundMedia, InboundMessage } from "../meta/meta-webhook";
+import type { InboundMedia, InboundMessage, MessageEvent } from "../meta/meta-webhook";
 import { UserService } from "../users/user.service";
 
 const userService = new UserService();
@@ -96,8 +96,6 @@ export async function ingestInbound(inbound: InboundMessage): Promise<void> {
     contactName ||= await findContactName(inbound, integration.accessTokenEncrypted);
     assignedToId = await userService.getNextEmployeeRoundRobin(companyId);
   }
-  const media = inbound.media && await saveInboundMedia(inbound.media, integration.accessTokenEncrypted);
-
   let updated;
   try {
     updated = await prisma.$transaction(async (tx) => {
@@ -123,19 +121,87 @@ export async function ingestInbound(inbound: InboundMessage): Promise<void> {
         });
       }
 
-      await tx.message.create({
-        data: { conversationId: conversation.id, externalId, content, sender: "CLIENT", createdAt: sentAt, ...media?.fields },
+      const message = await tx.message.create({
+        data: { conversationId: conversation.id, externalId, content, sender: "CLIENT", createdAt: sentAt },
+        select: { id: true },
       });
-      return tx.conversation.update({ where: { id: conversation.id, companyId }, data: { updatedAt: new Date() } });
+      const touched = await tx.conversation.update({ where: { id: conversation.id, companyId }, data: { updatedAt: new Date() } });
+      return { conversation: touched, messageId: message.id };
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" &&
       await prisma.message.findUnique({ where: { externalId }, select: { id: true } })) {
-      await removeUnusedMedia(media?.absolutePath);
       return;
     }
     throw error;
   }
-  if (updated) emitMessageCreated(updated);
-  else await removeUnusedMedia(media?.absolutePath);
+  if (!updated) return;
+  emitMessageCreated(updated.conversation);
+  if (inbound.media) {
+    void attachInboundMedia(updated.messageId, updated.conversation, inbound.media, integration.accessTokenEncrypted);
+  }
+}
+
+const statusTransitions: Record<MessageStatus, Prisma.MessageWhereInput> = {
+  SENT: { status: null },
+  DELIVERED: { OR: [{ status: null }, { status: { in: ["SENT", "FAILED"] } }] },
+  READ: { OR: [{ status: null }, { status: { not: "READ" } }] },
+  FAILED: { status: "SENT" },
+};
+
+export async function applyMessageEvent(event: MessageEvent): Promise<void> {
+  const conversationWhere: Prisma.ConversationWhereInput = {
+    channel: event.channel,
+    integration: { type: event.channel, externalAccountId: event.accountId, provider: "META", status: "ACTIVE" },
+  };
+  let messageWhere: Prisma.MessageWhereInput;
+  let data: Prisma.MessageUpdateManyMutationInput;
+  if (event.kind === "read") {
+    conversationWhere.contactRemoteId = event.contactRemoteId;
+    messageWhere = { sender: "USER", createdAt: { lte: event.watermark }, ...statusTransitions.READ };
+    data = { status: "READ" };
+  } else if (event.kind === "status") {
+    messageWhere = { externalId: event.externalId, ...statusTransitions[event.status] };
+    data = { status: event.status };
+  } else {
+    messageWhere = {
+      externalId: event.externalId,
+      OR: event.emoji === null ? [{ reaction: { not: null } }] : [{ reaction: null }, { reaction: { not: event.emoji } }],
+    };
+    data = { reaction: event.emoji };
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const conversations = await tx.conversation.findMany({
+      where: { ...conversationWhere, messages: { some: messageWhere } },
+      select: { id: true, companyId: true, assignedToId: true },
+      orderBy: { id: "asc" },
+    });
+    const changed: typeof conversations = [];
+    for (const conversation of conversations) {
+      const { count } = await tx.message.updateMany({
+        where: { ...messageWhere, conversationId: conversation.id, conversation: conversationWhere },
+        data,
+      });
+      if (count > 0) changed.push(conversation);
+    }
+    return changed;
+  });
+  for (const conversation of updated) emitMessageUpdated(conversation);
+}
+
+async function attachInboundMedia(
+  messageId: string,
+  conversation: Parameters<typeof emitMessageUpdated>[0],
+  inboundMedia: InboundMedia,
+  accessTokenEncrypted: string | null,
+) {
+  const media = await saveInboundMedia(inboundMedia, accessTokenEncrypted);
+  if (!media) return;
+  try {
+    await prisma.message.update({ where: { id: messageId }, data: media.fields });
+    emitMessageUpdated(conversation);
+  } catch {
+    await removeUnusedMedia(media.absolutePath);
+  }
 }

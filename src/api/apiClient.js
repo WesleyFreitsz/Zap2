@@ -102,6 +102,7 @@ export const conversationsApi = {
     apiClient.post("/conversations", data).then((r) => r.data.data),
   update: (id, data) =>
     apiClient.put(`/conversations/${id}`, data).then((r) => r.data.data),
+  markAsRead: (id) => apiClient.post(`/conversations/${id}/read`),
   assign: (data) =>
     apiClient.post("/conversations/assign", data).then((r) => r.data.data),
   transfer: (data) =>
@@ -110,6 +111,7 @@ export const conversationsApi = {
     apiClient.patch(`/conversations/${id}/close`).then((r) => r.data.data),
   createLead: (id) =>
     apiClient.post(`/conversations/${id}/create-lead`).then((r) => r.data.data),
+  remove: (id) => apiClient.delete(`/conversations/${id}`),
 };
 
 // ============ MESSAGES ============
@@ -120,6 +122,16 @@ export const messagesApi = {
     apiClient.post("/messages/send", data).then((r) => r.data.data),
   sendTemplate: (data) =>
     apiClient.post("/messages/send-template", data).then((r) => r.data.data),
+  sendMedia: (formData) =>
+    apiClient
+      .post("/messages/send-media", formData, buildRequestConfig(formData))
+      .then((r) => r.data.data),
+  listStickers: () =>
+    apiClient.get("/messages/stickers").then((r) => r.data.data),
+  react: (id, emoji) => apiClient.post(`/messages/${id}/react`, { emoji }),
+  edit: (id, content) =>
+    apiClient.patch(`/messages/${id}`, { content }).then((r) => r.data.data),
+  remove: (id) => apiClient.delete(`/messages/${id}`),
   suggestReply: (conversationId) =>
     apiClient
       .post("/messages/suggest-reply", { conversationId })

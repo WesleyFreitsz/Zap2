@@ -48,6 +48,13 @@ enum ChannelProvider {
   META
 }
 
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
 enum ConnectionStatus {
   CONNECTED
   DISCONNECTED
@@ -183,6 +190,7 @@ model Conversation {
   integrationId String?
   channel      IntegrationType    @default(WHATSAPP)
   status       ConversationStatus @default(OPEN)
+  lastReadAt   DateTime?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
@@ -209,9 +217,17 @@ model Message {
   mimeType       String?
   fileName       String?
   fileSize       Int?
+  status         MessageStatus?
+  reaction       String?
+  ownReaction    String?
+  replyToId      String?
+  editedAt       DateTime?
+  deletedAt      DateTime?
   createdAt      DateTime   @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  replyTo      Message?     @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]    @relation("MessageReplies")
 
   @@map("messages")
 }

@@ -2,8 +2,8 @@ import { Router } from "express";
 import { env } from "../../config/env";
 import { AppError } from "../../utils/AppError";
 import { logger } from "../../utils/logger";
-import { ingestInbound } from "../channels/channel-inbox.service";
-import { parseMetaWebhook, verifyWebhookChallenge, verifyWebhookSignature } from "./meta-webhook";
+import { applyMessageEvent, ingestInbound } from "../channels/channel-inbox.service";
+import { parseMetaEvents, parseMetaWebhook, verifyWebhookChallenge, verifyWebhookSignature } from "./meta-webhook";
 
 const router = Router();
 
@@ -24,6 +24,7 @@ router.post("/", async (req, res, next) => {
     // grava antes de confirmar: com 500 a Meta reenvia e o externalId evita duplicar
     const failures = await processWebhook(req.body);
     res.sendStatus(failures > 0 ? 500 : 200);
+    if (failures === 0) void processMessageEvents(req.body);
   } catch (error) {
     next(error);
   }
@@ -40,6 +41,16 @@ async function processWebhook(payload: unknown): Promise<number> {
     }
   }
   return failures;
+}
+
+async function processMessageEvents(payload: unknown): Promise<void> {
+  for (const event of parseMetaEvents(payload)) {
+    try {
+      await applyMessageEvent(event);
+    } catch (error) {
+      logger.error("[Meta Webhook] Falha ao atualizar mensagem", { event, error });
+    }
+  }
 }
 
 export default router;
