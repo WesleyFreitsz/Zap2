@@ -193,6 +193,23 @@ export const channelsApi = {
   remove: (id) => apiClient.delete(`/channels/${id}`),
 };
 
+export const automationsApi = {
+  config: () => apiClient.get("/automations/config").then((r) => r.data.data),
+  updateConfig: (data) => apiClient.put("/automations/config", data).then((r) => r.data.data),
+  testWebhook: () => apiClient.post("/automations/config/test").then((r) => r.data.data),
+  rotateApiKey: () => apiClient.post("/automations/api-key").then((r) => r.data.data),
+  revokeApiKey: () => apiClient.delete("/automations/api-key").then((r) => r.data.data),
+};
+
+export const zendeskApi = {
+  config: () => apiClient.get("/zendesk/config").then((r) => r.data.data),
+  saveConfig: (data) => apiClient.put("/zendesk/config", data).then((r) => r.data.data),
+  removeConfig: () => apiClient.delete("/zendesk/config").then((r) => r.data.data),
+  rotateWebhookToken: () => apiClient.post("/zendesk/webhook-token").then((r) => r.data.data),
+  createTicket: (conversationId) =>
+    apiClient.post(`/zendesk/conversations/${conversationId}/ticket`).then((r) => r.data.data),
+};
+
 // ============ WHATSAPP (multi-session) ============
 export const whatsappApi = {
   // List all sessions for current company

@@ -176,6 +176,13 @@ export class MessageService {
     return this.recordSentMessage(conversation.id, companyId, userId, { content, externalId });
   }
 
+  async sendFromIntegration(conversationId: string, companyId: string, content: string) {
+    const conversation = await prisma.conversation.findFirst({ where: { id: conversationId, companyId } });
+    if (!conversation) throw new AppError("Conversation not found", 404);
+    const { externalId } = await sendText(conversation, content);
+    return this.recordSentMessage(conversation.id, companyId, "integration", { content, externalId });
+  }
+
   private async findConversationForSend(conversationId: string, companyId: string, userId: string, role: string) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, companyId },

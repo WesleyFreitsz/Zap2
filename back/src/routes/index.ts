@@ -18,10 +18,13 @@ import planRoutes from "../modules/plans/plan.routes";
 import metaWebhookRoutes from "../modules/meta/meta-webhook.routes";
 import channelRoutes from "../modules/channels/channels.routes";
 import quickReplyRoutes from "../modules/quick-replies/quick-reply.routes";
+import automationRoutes from "../modules/automations/automation.routes";
+import zendeskRoutes, { zendeskWebhookRoutes } from "../modules/zendesk/zendesk.routes";
 
 const router = Router();
 
 router.use("/webhooks/meta", metaWebhookRoutes);
+router.use("/webhooks/zendesk", zendeskWebhookRoutes);
 
 router.use("/auth", authRoutes);
 router.use("/users", userRoutes);
@@ -41,5 +44,7 @@ router.use("/billing", billingRoutes);
 router.use("/admin", adminDashboardRoutes);
 router.use("/plans", planRoutes);
 router.use("/quick-replies", quickReplyRoutes);
+router.use("/automations", automationRoutes);
+router.use("/zendesk", zendeskRoutes);
 
 export default router;

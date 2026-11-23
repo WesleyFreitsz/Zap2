@@ -1,11 +1,15 @@
 import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plug, Plus } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { channelsApi } from "@/api/apiClient";
 import ChannelIcon, { channelLabels } from "@/components/channels/ChannelIcon";
 import MetaChannelConnect from "@/components/channels/MetaChannelConnect";
 import WhatsAppQrConnect from "@/components/channels/WhatsAppQrConnect";
+import AutomationSettings from "@/components/channels/AutomationSettings";
+import ZendeskSettings from "@/components/channels/ZendeskSettings";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,9 +36,12 @@ export default function Channels() {
   const [choice, setChoice] = useState(null);
   const [qrChannel, setQrChannel] = useState(null);
   const [complete, setComplete] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") || "social";
   const channels = useQuery({
     queryKey: ["channels"],
     queryFn: channelsApi.list,
+    enabled: tab === "social",
     refetchInterval: (query) => query.state.error ? false : 5000,
   });
   const config = useQuery({
@@ -75,12 +82,23 @@ export default function Channels() {
       <div className="max-w-4xl space-y-6 p-6 lg:p-8">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-            <Plug className="h-6 w-6 text-primary" /> Canais
+            <Plug className="h-6 w-6 text-primary" /> Integrações
           </h1>
-          <DialogTrigger asChild>
-            <Button className="gap-2"><Plus className="h-4 w-4" /> Conectar canal</Button>
-          </DialogTrigger>
+          {tab === "social" && (
+            <DialogTrigger asChild>
+              <Button className="gap-2"><Plus className="h-4 w-4" /> Conectar canal</Button>
+            </DialogTrigger>
+          )}
         </header>
+        <Tabs value={tab} onValueChange={(value) => setSearchParams({ tab: value }, { replace: true })}>
+          <TabsList>
+            <TabsTrigger value="social">Redes sociais</TabsTrigger>
+            <TabsTrigger value="support">Atendimento</TabsTrigger>
+            <TabsTrigger value="automations">Automações</TabsTrigger>
+          </TabsList>
+          <TabsContent value="support" className="mt-6"><ZendeskSettings /></TabsContent>
+          <TabsContent value="automations" className="mt-6"><AutomationSettings /></TabsContent>
+          <TabsContent value="social" className="mt-6 space-y-6">
         {channels.isPending && <p role="status" className="text-sm text-muted-foreground">Carregando canais…</p>}
         {channels.isError && (
           <div className="flex flex-wrap items-center gap-3">
@@ -141,6 +159,8 @@ export default function Channels() {
             );
           })}
         </div>
+          </TabsContent>
+        </Tabs>
       </div>
 
       <DialogContent className="max-h-[90dvh] overflow-y-auto">
