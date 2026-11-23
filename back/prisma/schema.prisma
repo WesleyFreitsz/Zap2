@@ -120,12 +120,12 @@ model Plan {
 }
 
 model Company {
-  id             String   @id @default(uuid())
-  name           String
-  logo           String?
-  primaryColor   String?
-  secondaryColor String?
-  plan           String   @default("basic")
+  id                 String   @id @default(uuid())
+  name               String
+  logo               String?
+  primaryColor       String?
+  secondaryColor     String?
+  plan               String   @default("basic")
   isActive           Boolean  @default(true)
   lastAssignedUserId String?
   createdAt          DateTime @default(now())
@@ -141,8 +141,32 @@ model Company {
   invitations       Invitation[]
   subscription      Subscription?
   quickReplies      QuickReply[]
+  automationConfig  AutomationConfig?
+  zendeskConfig     ZendeskConfig?
 
   @@map("companies")
+}
+
+model AutomationConfig {
+  companyId  String   @id
+  webhookUrl String?
+  apiKeyHash String?  @unique
+  updatedAt  DateTime @updatedAt
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("automation_configs")
+}
+
+model ZendeskConfig {
+  companyId         String   @id
+  subdomain         String
+  email             String
+  apiTokenEncrypted String
+  webhookTokenHash  String?  @unique
+  updatedAt         DateTime @updatedAt
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("zendesk_configs")
 }
 
 model QuickReply {
@@ -179,20 +203,23 @@ model User {
 }
 
 model Conversation {
-  id           String             @id @default(uuid())
-  contactName  String
-  contactPhone String
-  contactRemoteId String?
-  contactAvatarUrl String?
-  assignedToId String?
-  companyId    String
-  leadId       String?
-  integrationId String?
-  channel      IntegrationType    @default(WHATSAPP)
-  status       ConversationStatus @default(OPEN)
-  lastReadAt   DateTime?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  id                   String             @id @default(uuid())
+  contactName          String
+  contactPhone         String
+  contactRemoteId      String?
+  contactAvatarUrl     String?
+  assignedToId         String?
+  companyId            String
+  leadId               String?
+  integrationId        String?
+  channel              IntegrationType    @default(WHATSAPP)
+  status               ConversationStatus @default(OPEN)
+  lastReadAt           DateTime?
+  zendeskTicketId      String?
+  zendeskRequesterId   String?
+  zendeskLastCommentId String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
   assignedTo        User?              @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -207,11 +234,11 @@ model Conversation {
 }
 
 model Message {
-  id             String     @id @default(uuid())
+  id             String         @id @default(uuid())
   conversationId String
   sender         SenderType
   content        String
-  externalId     String?    @unique
+  externalId     String?        @unique
   mediaType      String?
   mediaUrl       String?
   mimeType       String?
@@ -223,7 +250,7 @@ model Message {
   replyToId      String?
   editedAt       DateTime?
   deletedAt      DateTime?
-  createdAt      DateTime   @default(now())
+  createdAt      DateTime       @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   replyTo      Message?     @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
@@ -233,7 +260,7 @@ model Message {
 }
 
 model Product {
-  id               String   @id @default(uuid())
+  id               String  @id @default(uuid())
   name             String
   description      String?
   price            Float
@@ -241,9 +268,9 @@ model Product {
   code             String?
   category         String?
   promotionalPrice Float?
-  stock            Int      @default(0)
-  active           Boolean  @default(true)
-  whatsappMessage  String?  @db.Text
+  stock            Int     @default(0)
+  active           Boolean @default(true)
+  whatsappMessage  String? @db.Text
   companyId        String
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -273,14 +300,14 @@ model ScheduledMessage {
 }
 
 model AiConfig {
-  id              String  @id @default(uuid())
-  companyId       String  @unique
-  personality     String  @default("professional")
-  language        String  @default("pt-BR")
-  maxTokens       Int     @default(500)
-  temperature     Float   @default(0.7)
-  systemPrompt    String? @db.Text
-  productContext  String? @db.Text
+  id             String  @id @default(uuid())
+  companyId      String  @unique
+  personality    String  @default("professional")
+  language       String  @default("pt-BR")
+  maxTokens      Int     @default(500)
+  temperature    Float   @default(0.7)
+  systemPrompt   String? @db.Text
+  productContext String? @db.Text
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -320,26 +347,26 @@ model ConversationTag {
 }
 
 model Integration {
-  id               String            @id @default(uuid())
-  type             IntegrationType
-  provider         ChannelProvider   @default(WPPCONNECT)
-  externalAccountId String?
-  metaPageId       String?
-  wabaId           String?
-  label            String?
+  id                   String            @id @default(uuid())
+  type                 IntegrationType
+  provider             ChannelProvider   @default(WPPCONNECT)
+  externalAccountId    String?
+  metaPageId           String?
+  wabaId               String?
+  label                String?
   accessTokenEncrypted String?
-  token            String
-  companyId        String
-  status           IntegrationStatus @default(ACTIVE)
-  instanceName     String?           @unique
-  instanceId       String?
-  webhookUrl       String?
-  qrCode           String?           @db.Text
-  connectionStatus ConnectionStatus  @default(DISCONNECTED)
-  connectedAt      DateTime?
-  updatedAt        DateTime          @updatedAt
+  token                String
+  companyId            String
+  status               IntegrationStatus @default(ACTIVE)
+  instanceName         String?           @unique
+  instanceId           String?
+  webhookUrl           String?
+  qrCode               String?           @db.Text
+  connectionStatus     ConnectionStatus  @default(DISCONNECTED)
+  connectedAt          DateTime?
+  updatedAt            DateTime          @updatedAt
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   conversations Conversation[]
 
   createdAt DateTime @default(now())
@@ -349,20 +376,20 @@ model Integration {
 }
 
 model Lead {
-  id           String          @id @default(uuid())
-  name         String
-  phone        String?
-  channel      IntegrationType @default(WHATSAPP)
+  id              String          @id @default(uuid())
+  name            String
+  phone           String?
+  channel         IntegrationType @default(WHATSAPP)
   contactRemoteId String?
-  avatarUrl    String?
-  email        String?
-  temperature  LeadTemperature @default(COLD)
-  status       LeadStatus      @default(NEW)
-  notes        String?         @db.Text
-  companyId    String
-  assignedToId String?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  avatarUrl       String?
+  email           String?
+  temperature     LeadTemperature @default(COLD)
+  status          LeadStatus      @default(NEW)
+  notes           String?         @db.Text
+  companyId       String
+  assignedToId    String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   assignedTo    User?          @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
@@ -375,18 +402,18 @@ model Lead {
 }
 
 model Invitation {
-  id        String           @id @default(uuid())
-  email     String
-  role      InvitationRole
-  companyId String?
+  id          String           @id @default(uuid())
+  email       String
+  role        InvitationRole
+  companyId   String?
   invitedById String
-  token     String           @unique
-  status    InvitationStatus @default(PENDING)
-  expiresAt DateTime
-  createdAt DateTime         @default(now())
+  token       String           @unique
+  status      InvitationStatus @default(PENDING)
+  expiresAt   DateTime
+  createdAt   DateTime         @default(now())
 
-  company   Company?         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  invitedBy User             @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invitedBy User     @relation(fields: [invitedById], references: [id], onDelete: Cascade)
 
   @@map("invitations")
 }

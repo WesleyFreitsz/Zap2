@@ -3,7 +3,8 @@ import prisma from "../../config/prisma";
 import { emitConversationUpdated, emitMessageCreated } from "../../realtime";
 import { AppError } from "../../utils/AppError";
 import { withBrazilianNinthDigit } from "../../utils/phone";
-import { LeadService } from "../leads/lead.service";
+import { LeadService, notifyLeadChanged } from "../leads/lead.service";
+import { copyConversationTagsToLead } from "../tags/tag.service";
 import { UserService } from "../users/user.service";
 import { assertConversationAccess, conversationScope, type Actor } from "./conversation-access";
 import { CreateConversationInput, UpdateConversationInput } from "./conversation.schema";
@@ -77,7 +78,7 @@ export class ConversationService {
       include: {
         assignedTo: { select: { id: true, name: true } },
         lead: {
-          select: { id: true, name: true, phone: true, avatarUrl: true },
+          select: { id: true, name: true, phone: true, avatarUrl: true, temperature: true, status: true },
         },
         _count: { select: { messages: true } },
         integration: { select: { provider: true } },
@@ -121,7 +122,7 @@ export class ConversationService {
       include: {
         assignedTo: { select: { id: true, name: true, email: true } },
         lead: {
-          select: { id: true, name: true, phone: true, avatarUrl: true },
+          select: { id: true, name: true, phone: true, avatarUrl: true, temperature: true, status: true },
         },
         messages: { orderBy: { createdAt: "asc" } },
         integration: { select: { provider: true } },
@@ -271,6 +272,7 @@ export class ConversationService {
     if (data.contactAvatarUrl !== undefined)
       updateData.contactAvatarUrl = data.contactAvatarUrl;
 
+    let updatedLeadId: string | undefined;
     if (data.leadId !== undefined) {
       if (data.leadId === null) {
         updateData.leadId = null;
@@ -282,6 +284,7 @@ export class ConversationService {
         if (!lead) throw new AppError("Lead not found", 404);
 
         updateData.leadId = lead.id;
+        updatedLeadId = lead.id;
         if (lead.phone) updateData.contactPhone = lead.phone;
 
         if (lead.avatarUrl) {
@@ -299,12 +302,16 @@ export class ConversationService {
         include: {
           assignedTo: { select: { id: true, name: true } },
           lead: {
-            select: { id: true, name: true, phone: true, avatarUrl: true },
+            select: { id: true, name: true, phone: true, avatarUrl: true, temperature: true, status: true },
           },
           _count: { select: { messages: true } },
         },
       })
-      .then((updated) => {
+      .then(async (updated) => {
+        if (updatedLeadId) {
+          await copyConversationTagsToLead(conversationId, updatedLeadId);
+          void notifyLeadChanged(companyId, updatedLeadId);
+        }
         emitConversationUpdated(updated);
         return this.formatConversation(updated);
       });
@@ -320,7 +327,7 @@ export class ConversationService {
       include: {
         assignedTo: { select: { id: true, name: true } },
         lead: {
-          select: { id: true, name: true, phone: true, avatarUrl: true },
+          select: { id: true, name: true, phone: true, avatarUrl: true, temperature: true, status: true },
         },
         _count: { select: { messages: true } },
       },
@@ -337,6 +344,7 @@ export class ConversationService {
     }
 
     const lead = await leadService.findOrCreateForConversation(conversation, companyId);
+    await copyConversationTagsToLead(conversationId, lead.id);
 
     return prisma.conversation
       .update({
@@ -350,13 +358,14 @@ export class ConversationService {
         include: {
           assignedTo: { select: { id: true, name: true } },
           lead: {
-            select: { id: true, name: true, phone: true, avatarUrl: true },
+            select: { id: true, name: true, phone: true, avatarUrl: true, temperature: true, status: true },
           },
           _count: { select: { messages: true } },
         },
       })
       .then((updated) => {
         emitConversationUpdated(updated);
+        void notifyLeadChanged(companyId, lead.id);
         return this.formatConversation(updated);
       });
   }

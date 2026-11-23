@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { io } from "socket.io-client";
 import apiClient, { usersApi } from "@/api/apiClient";
 import { useAuth } from "@/lib/AuthContext";
+import { invalidateContactData } from "@/lib/query-client";
 
 export function useRealtime() {
   const { isAuthenticated, isLoadingAuth, user } = useAuth();
@@ -56,7 +57,8 @@ export function useRealtime() {
     });
     socket.on("message:updated", ({ conversationId }) =>
       queryClient.invalidateQueries({ queryKey: ["messages", conversationId] }));
-    socket.on("conversation:updated", invalidateConversations);
+    socket.on("conversation:updated", () => invalidateContactData(queryClient));
+    socket.on("lead:updated", () => invalidateContactData(queryClient));
     socket.on("conversation:typing", ({ conversationId, typing }) => {
       const key = ["typing", conversationId];
       clearTimeout(typingTimers.get(conversationId));

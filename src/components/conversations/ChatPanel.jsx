@@ -35,6 +35,8 @@ import SendProductModal from "@/components/products/SendProductModal";
 import ConversationTags from "./ConversationTags";
 import ChannelIcon, { getConversationName, getConversationPhone } from "@/components/channels/ChannelIcon";
 import LinkLeadDialog from "./LinkLeadDialog";
+import ZendeskTicketButton from "./ZendeskTicketButton";
+import LeadStatusControls from "./LeadStatusControls";
 import { cn } from "@/lib/utils";
 
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -261,7 +263,8 @@ export default function ChatPanel({ conversation, messages = [], leadConversatio
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {!conversation.leadId && <LinkLeadDialog conversationId={conversation.id} />}
+          {conversation.lead ? <LeadStatusControls lead={conversation.lead} /> : <LinkLeadDialog conversationId={conversation.id} />}
+          <ZendeskTicketButton conversation={conversation} />
           <ConversationTags conversationId={conversation.id} />
           {isAdmin && (
             <Button

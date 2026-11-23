@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import * as wppconnect from "@wppconnect-team/wppconnect";
 import { rmSync, existsSync } from "fs";
@@ -8,6 +10,8 @@ import {
   emitMessageCreated,
   emitMessageUpdated,
 } from "../../../realtime";
+import { notifyClientMessage } from "../../automations/client-message.events";
+import { createKeyedLock } from "../../../utils/keyed-lock";
 import { AppError } from "../../../utils/AppError";
 import { logger } from "../../../utils/logger";
 import { normalizePhone } from "../../../utils/phone";
@@ -25,6 +29,12 @@ export interface SendMediaOptions {
   quotedMsg?: string;
 }
 
+const OWN_MESSAGE_ECHO_DELAY_MS = 4000;
+const SYNC_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const SYNC_CONVERSATION_LIMIT = 50;
+const SYNC_MESSAGE_COUNT = 30;
+const SYNC_PARALLEL_CHATS = 5;
+const PHONE_HISTORY_DOWNLOAD_DELAY_MS = 20000;
 const IGNORED_MESSAGE_TYPES = new Set(["e2e_notification", "notification_template", "protocol", "revoked", "gp2", "call_log"]);
 const INCOMING_MEDIA_TYPES: Record<string, string> = {
   image: "image",
@@ -273,6 +283,8 @@ export class WppConnectService {
   }
 
   // ─── Close any existing / pending session for an integration ──
+  private readonly withContactLock = createKeyedLock();
+
   private async closeExisting(integrationId: string): Promise<void> {
     // Close connected client
     const client = sessions.get(integrationId);
@@ -723,6 +735,7 @@ export class WppConnectService {
       let connectionStatus: "CONNECTED" | "DISCONNECTED" | "CONNECTING";
       if (state === "CONNECTED") {
         connectionStatus = "CONNECTED";
+        void this.syncRecentMessages(client, companyId);
       } else if (state === "UNPAIRED" || state === "CONFLICT") {
         connectionStatus = "DISCONNECTED";
         sessions.delete(integrationId);
@@ -745,167 +758,8 @@ export class WppConnectService {
         );
     });
 
-    client.onAnyMessage(async (message: any) => {
-      try {
-        if (message.fromMe) return;
-        if (message.isGroupMsg) return;
-        const rawFrom = this.serializeWid(message.from);
-        if (!rawFrom) return;
-        if (rawFrom === "status@broadcast" || rawFrom.endsWith("@broadcast")) {
-          return;
-        }
-        if (IGNORED_MESSAGE_TYPES.has(message.type)) return;
-
-        client.subscribePresence(rawFrom).catch(() => {});
-
-        logger.info(
-          `[WPPConnect] Incoming message from ${rawFrom}: ${(message.body || "").substring(0, 50)}`,
-        );
-
-        const identityCandidates = this.getContactCandidates(message);
-        if (rawFrom.endsWith("@lid")) {
-          const entry = await client.getPnLidEntry(rawFrom).catch((err: Error) => {
-            logger.warn(`[WPPConnect] getPnLidEntry failed for ${rawFrom}: ${err.message}`);
-            return null;
-          });
-          const phoneId = entry?.phoneNumber?._serialized;
-          if (phoneId) identityCandidates.unshift(phoneId);
-        }
-        const contactRemoteId =
-          this.getPreferredRemoteId(identityCandidates) || rawFrom;
-        const phoneCandidates = identityCandidates.flatMap((candidate) =>
-          this.getPhoneCandidates(candidate),
-        );
-        const normalizedContactPhone = this.getPreferredPhone(
-          phoneCandidates,
-          contactRemoteId,
-        );
-        const displayPhone = this.getDisplayPhone(
-          normalizedContactPhone || contactRemoteId,
-        );
-        const pushName = this.getPreferredContactName(message, displayPhone);
-        const externalId =
-          typeof message.id === "string"
-            ? message.id
-            : message.id?._serialized || String(message.id || "");
-        if (phoneCandidates.length === 0) return;
-
-        if (externalId) {
-          const existing = await prisma.message.findUnique({
-            where: { externalId },
-          });
-          if (existing) return;
-        }
-
-        const mediaType = this.getIncomingMediaType(message);
-        const mediaPayload = mediaType
-          ? await this.resolveIncomingMedia(client, message, companyId, mediaType)
-          : null;
-        const content = this.getIncomingContent(message, mediaType);
-
-        let conversation = await prisma.conversation.findFirst({
-          where: {
-            companyId,
-            status: { notIn: ["CLOSED"] },
-            channel: "WHATSAPP",
-            NOT: { integration: { is: { provider: "META" } } },
-            OR: [
-              ...phoneCandidates.map((candidate) => ({
-                contactPhone: candidate,
-              })),
-              ...identityCandidates.map((candidate) => ({
-                contactRemoteId: candidate,
-              })),
-            ],
-          },
-        });
-
-        const avatarUrl = conversation?.contactAvatarUrl?.startsWith("/uploads/")
-          ? null
-          : await this.resolveContactAvatar(client, message, contactRemoteId, companyId);
-
-        if (!conversation) {
-          const { UserService } = await import("../../users/user.service");
-          const userService = new UserService();
-          const assignedToId =
-            await userService.getNextEmployeeRoundRobin(companyId);
-
-          conversation = await prisma.conversation.create({
-            data: {
-              contactName: pushName || displayPhone,
-              contactPhone: normalizedContactPhone || rawFrom,
-              contactRemoteId,
-              contactAvatarUrl: avatarUrl || null,
-              channel: "WHATSAPP",
-              companyId,
-              assignedToId,
-              status: "OPEN",
-            },
-          });
-
-          logger.info(
-            `[WPPConnect] New conversation: ${conversation.id}, assigned to: ${assignedToId}`,
-          );
-        }
-
-        const updated = await prisma.conversation.update({
-          where: { id: conversation.id },
-          data: {
-            updatedAt: new Date(),
-            contactName: pushName || conversation.contactName,
-            contactPhone: normalizedContactPhone || conversation.contactPhone,
-            contactRemoteId: contactRemoteId || conversation.contactRemoteId,
-            contactAvatarUrl:
-              avatarUrl || conversation.contactAvatarUrl || null,
-          },
-        });
-
-        const quotedId =
-          this.serializeWid(message.quotedMsgId) || String(message.quotedStanzaID || "");
-        const quoted = quotedId
-          ? await this.findMessageByExternalId(quotedId, companyId)
-          : null;
-
-        await prisma.message.create({
-          data: {
-            conversationId: conversation.id,
-            replyToId: quoted?.conversation.id === conversation.id ? quoted.id : undefined,
-            sender: "CLIENT",
-            content,
-            externalId: externalId || undefined,
-            mediaType: mediaPayload?.mediaType,
-            mediaUrl: mediaPayload?.mediaUrl,
-            mimeType: mediaPayload?.mimeType,
-            fileName: mediaPayload?.fileName,
-            fileSize: mediaPayload?.fileSize,
-          },
-        });
-        emitMessageCreated(updated);
-
-        if (conversation.leadId && avatarUrl) {
-          await prisma.lead.updateMany({
-            where: {
-              id: conversation.leadId,
-              companyId,
-              OR: [
-                { avatarUrl: null },
-                { avatarUrl: "" },
-                { avatarUrl: { startsWith: "https://pps.whatsapp.net" } },
-              ],
-            },
-            data: { avatarUrl },
-          });
-        }
-
-        logger.info(
-          `[WPPConnect] Message from ${rawFrom} in conversation ${conversation.id}`,
-        );
-      } catch (err) {
-        logger.error(
-          `[WPPConnect] Error handling incoming message: ${(err as Error).message}`,
-        );
-      }
-    });
+    client.onAnyMessage((message: any) => this.handleMessage(client, companyId, message, { settle: true }));
+    void this.syncRecentMessages(client, companyId);
 
     client.onAck(async (ack) => {
       try {
@@ -1020,6 +874,267 @@ export class WppConnectService {
         );
       }
     });
+  }
+
+  private async handleMessage(
+    client: wppconnect.Whatsapp,
+    companyId: string,
+    message: any,
+    { settle }: { settle: boolean },
+  ): Promise<void> {
+    try {
+      if (message.isGroupMsg) return;
+      const fromMe = Boolean(message.fromMe);
+      const contact = fromMe
+        ? { ...message, from: message.to, sender: message.chat?.contact, notifyName: undefined }
+        : message;
+      const rawFrom = this.serializeWid(contact.from);
+      if (!rawFrom) return;
+      if (rawFrom === "status@broadcast" || rawFrom.endsWith("@broadcast")) {
+        return;
+      }
+      if (IGNORED_MESSAGE_TYPES.has(message.type)) return;
+
+      if (fromMe && settle) await delay(OWN_MESSAGE_ECHO_DELAY_MS);
+      else client.subscribePresence(rawFrom).catch(() => {});
+
+      logger.info(
+        `[WPPConnect] ${fromMe ? "Outgoing message to" : "Incoming message from"} ${rawFrom}: ${(message.body || "").substring(0, 50)}`,
+      );
+
+      const identityCandidates = this.getContactCandidates(contact);
+      if (rawFrom.endsWith("@lid")) {
+        const entry = await client.getPnLidEntry(rawFrom).catch((err: Error) => {
+          logger.warn(`[WPPConnect] getPnLidEntry failed for ${rawFrom}: ${err.message}`);
+          return null;
+        });
+        const phoneId = entry?.phoneNumber?._serialized;
+        if (phoneId) identityCandidates.unshift(phoneId);
+      }
+      const contactRemoteId =
+        this.getPreferredRemoteId(identityCandidates) || rawFrom;
+      const phoneCandidates = identityCandidates.flatMap((candidate) =>
+        this.getPhoneCandidates(candidate),
+      );
+      const normalizedContactPhone = this.getPreferredPhone(
+        phoneCandidates,
+        contactRemoteId,
+      );
+      const displayPhone = this.getDisplayPhone(
+        normalizedContactPhone || contactRemoteId,
+      );
+      const pushName = this.getPreferredContactName(contact, displayPhone);
+      const externalId =
+        typeof message.id === "string"
+          ? message.id
+          : message.id?._serialized || String(message.id || "");
+      if (phoneCandidates.length === 0) return;
+
+      if (externalId) {
+        const existing = await prisma.message.findUnique({
+          where: { externalId },
+        });
+        if (existing) return;
+      }
+
+      const mediaType = this.getIncomingMediaType(message);
+      const mediaPayload = mediaType
+        ? await this.resolveIncomingMedia(client, message, companyId, mediaType)
+        : null;
+      const content = this.getIncomingContent(message, mediaType);
+
+      const contactKey = `${companyId}:${normalizedContactPhone || contactRemoteId}`;
+      const { conversation, avatarUrl } = await this.withContactLock(contactKey, async () => {
+        let conversation = await prisma.conversation.findFirst({
+          where: {
+            companyId,
+            status: { notIn: ["CLOSED"] },
+            channel: "WHATSAPP",
+            NOT: { integration: { is: { provider: "META" } } },
+            OR: [
+              ...phoneCandidates.map((candidate) => ({
+                contactPhone: candidate,
+              })),
+              ...identityCandidates.map((candidate) => ({
+                contactRemoteId: candidate,
+              })),
+            ],
+          },
+        });
+
+        const avatarUrl = conversation?.contactAvatarUrl?.startsWith("/uploads/")
+          ? null
+          : await this.resolveContactAvatar(client, contact, contactRemoteId, companyId);
+
+        if (!conversation) {
+          const { UserService } = await import("../../users/user.service");
+          const userService = new UserService();
+          const assignedToId =
+            await userService.getNextEmployeeRoundRobin(companyId);
+
+          conversation = await prisma.conversation.create({
+            data: {
+              contactName: pushName || displayPhone,
+              contactPhone: normalizedContactPhone || rawFrom,
+              contactRemoteId,
+              contactAvatarUrl: avatarUrl || null,
+              channel: "WHATSAPP",
+              companyId,
+              assignedToId,
+              status: "OPEN",
+            },
+          });
+
+          logger.info(
+            `[WPPConnect] New conversation: ${conversation.id}, assigned to: ${assignedToId}`,
+          );
+        }
+        return { conversation, avatarUrl };
+      });
+
+      const updated = await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          updatedAt: new Date(),
+          contactName: fromMe ? conversation.contactName : pushName || conversation.contactName,
+          contactPhone: normalizedContactPhone || conversation.contactPhone,
+          contactRemoteId: contactRemoteId || conversation.contactRemoteId,
+          contactAvatarUrl:
+            avatarUrl || conversation.contactAvatarUrl || null,
+        },
+      });
+
+      const quotedId =
+        this.serializeWid(message.quotedMsgId) || String(message.quotedStanzaID || "");
+      const quoted = quotedId
+        ? await this.findMessageByExternalId(quotedId, companyId)
+        : null;
+
+      const sentAt = typeof message.t === "number" ? new Date(message.t * 1000) : new Date();
+      let created: { id: string };
+      try {
+        created = await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            replyToId: quoted?.conversation.id === conversation.id ? quoted.id : undefined,
+            sender: fromMe ? "USER" : "CLIENT",
+            status: fromMe ? "SENT" : undefined,
+            content,
+            externalId: externalId || undefined,
+            mediaType: mediaPayload?.mediaType,
+            mediaUrl: mediaPayload?.mediaUrl,
+            mimeType: mediaPayload?.mimeType,
+            fileName: mediaPayload?.fileName,
+            fileSize: mediaPayload?.fileSize,
+            createdAt: sentAt,
+          },
+          select: { id: true },
+        });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return;
+        throw error;
+      }
+      emitMessageCreated(updated);
+      if (!fromMe) void notifyClientMessage(created.id);
+
+      if (conversation.leadId && avatarUrl) {
+        await prisma.lead.updateMany({
+          where: {
+            id: conversation.leadId,
+            companyId,
+            OR: [
+              { avatarUrl: null },
+              { avatarUrl: "" },
+              { avatarUrl: { startsWith: "https://pps.whatsapp.net" } },
+            ],
+          },
+          data: { avatarUrl },
+        });
+      }
+
+      logger.info(
+        `[WPPConnect] Message from ${rawFrom} in conversation ${conversation.id}`,
+      );
+    } catch (err) {
+      logger.error(
+        `[WPPConnect] Error handling incoming message: ${(err as Error).message}`,
+      );
+    }
+    }
+
+  private readonly syncingCompanies = new Set<string>();
+
+  private async syncRecentMessages(client: wppconnect.Whatsapp, companyId: string): Promise<void> {
+    if (this.syncingCompanies.has(companyId)) return;
+    this.syncingCompanies.add(companyId);
+    try {
+      await delay(PHONE_HISTORY_DOWNLOAD_DELAY_MS);
+      const conversations = await prisma.conversation.findMany({
+        where: {
+          companyId,
+          channel: "WHATSAPP",
+          status: { not: "CLOSED" },
+          contactRemoteId: { not: null },
+          updatedAt: { gte: new Date(Date.now() - SYNC_WINDOW_MS) },
+          NOT: { integration: { is: { provider: "META" } } },
+        },
+        orderBy: { updatedAt: "desc" },
+        take: SYNC_CONVERSATION_LIMIT,
+        select: { id: true, contactRemoteId: true, createdAt: true, lastReadAt: true },
+      });
+      let imported = 0;
+      for (let index = 0; index < conversations.length; index += SYNC_PARALLEL_CHATS) {
+        const counts = await Promise.all(
+          conversations.slice(index, index + SYNC_PARALLEL_CHATS).map((conversation) => this.syncChat(client, companyId, conversation)),
+        );
+        imported += counts.reduce((total, count) => total + count, 0);
+      }
+      logger.info(`[WPPConnect] Sync: ${imported} mensagens importadas de ${conversations.length} conversas`);
+    } catch (error) {
+      logger.warn(`[WPPConnect] Sync falhou: ${String(error)}`);
+    } finally {
+      this.syncingCompanies.delete(companyId);
+    }
+  }
+
+  private async syncChat(
+    client: wppconnect.Whatsapp,
+    companyId: string,
+    conversation: { id: string; contactRemoteId: string | null; createdAt: Date; lastReadAt: Date | null },
+  ): Promise<number> {
+    const remoteId = conversation.contactRemoteId!;
+    const chatId = remoteId.endsWith("@lid")
+      ? remoteId
+      : await this.resolveChatId(client, remoteId.replace(/@c\.us$/, "")).catch(() => remoteId);
+    const messages: any[] = await client
+      .getMessages(chatId, { count: SYNC_MESSAGE_COUNT })
+      .catch((error: unknown) => {
+        logger.warn(`[WPPConnect] Sync: getMessages falhou para ${chatId}: ${String(error)}`);
+        return [];
+      });
+    const recent = messages.filter(
+      (message) => typeof message.t === "number" && message.t * 1000 >= conversation.createdAt.getTime(),
+    );
+    const ids = recent.map((message) => this.serializeWid(message.id)).filter(Boolean);
+    const known = new Set(
+      (await prisma.message.findMany({ where: { externalId: { in: ids } }, select: { externalId: true } }))
+        .map((message) => message.externalId),
+    );
+    const missing = recent.filter((message) => !known.has(this.serializeWid(message.id)));
+    for (const message of missing) {
+      await this.handleMessage(client, companyId, message, { settle: false });
+    }
+
+    const firstClientMessageAt = missing
+      .filter((message) => !message.fromMe)
+      .reduce<number | null>((earliest, message) => Math.min(earliest ?? Infinity, message.t * 1000), null);
+    if (firstClientMessageAt !== null && conversation.lastReadAt && conversation.lastReadAt.getTime() >= firstClientMessageAt) {
+      await prisma.conversation.updateMany({
+        where: { id: conversation.id, lastReadAt: conversation.lastReadAt },
+        data: { lastReadAt: new Date(firstClientMessageAt - 1) },
+      });
+    }
+    return missing.length;
   }
 
   private mapAckToStatus(ack: number): AckMessageStatus | null {

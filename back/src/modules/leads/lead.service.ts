@@ -2,6 +2,8 @@ import type { Conversation, Prisma } from "@prisma/client";
 import prisma from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import type { Actor } from "../conversations/conversation-access";
+import { publishEvent } from "../automations/automation.service";
+import { emitLeadUpdated } from "../../realtime";
 import { CreateLeadInput, UpdateLeadInput } from "./lead.schema";
 import { normalizePhone } from "../../utils/phone";
 
@@ -14,6 +16,23 @@ type LeadWithTags = Prisma.LeadGetPayload<{ include: typeof leadInclude }>;
 
 function toLeadResponse<T extends Pick<LeadWithTags, "tags">>({ tags, ...lead }: T) {
   return { ...lead, tags: tags.map(({ tag }) => tag) };
+}
+
+export async function notifyLeadChanged(companyId: string, leadId: string, extraUserIds: Array<string | null> = []) {
+  const [lead, conversations] = await Promise.all([
+    prisma.lead.findUnique({ where: { id: leadId }, select: { assignedToId: true } }),
+    prisma.conversation.findMany({ where: { leadId, companyId }, select: { assignedToId: true } }),
+  ]);
+  emitLeadUpdated(companyId, leadId, [
+    lead?.assignedToId ?? null,
+    ...conversations.map(({ assignedToId }) => assignedToId),
+    ...extraUserIds,
+  ]);
+}
+
+function publishLeadCreated(companyId: string, lead: LeadWithTags) {
+  void publishEvent(companyId, "lead.created", toLeadResponse(lead));
+  void notifyLeadChanged(companyId, lead.id);
 }
 
 function leadScope(actor: Actor): Prisma.LeadWhereInput {
@@ -71,6 +90,7 @@ export class LeadService {
       include: leadInclude,
     });
 
+    publishLeadCreated(companyId, lead);
     return toLeadResponse(lead);
   }
 
@@ -169,15 +189,18 @@ export class LeadService {
       });
     }
 
+    void notifyLeadChanged(companyId, id, [lead.assignedToId]);
     return toLeadResponse(updatedLead);
   }
 
   async delete(id: string, companyId: string, actor: Actor) {
+    const conversations = await prisma.conversation.findMany({ where: { leadId: id, companyId }, select: { assignedToId: true } });
     const { count } = await prisma.lead.deleteMany({
       where: { id, companyId, ...leadScope(actor) },
     });
 
     if (count === 0) throw new AppError("Lead not found", 404);
+    emitLeadUpdated(companyId, id, [actor.userId, ...conversations.map(({ assignedToId }) => assignedToId)]);
 
     return { message: "Lead deletado com sucesso" };
   }
@@ -196,8 +219,11 @@ export class LeadService {
 
     const contactRemoteId = conversation.contactRemoteId || contactPhone;
     const name = contactName && contactName !== contactRemoteId ? contactName : "Contato sem nome";
-    return prisma.lead.upsert({
-      where: { companyId_channel_contactRemoteId: { companyId, channel, contactRemoteId } },
+    const where = { companyId_channel_contactRemoteId: { companyId, channel, contactRemoteId } };
+    const existing = await prisma.lead.findUnique({ where });
+    if (existing) return existing;
+    const lead = await prisma.lead.upsert({
+      where,
       create: {
         name,
         channel,
@@ -208,7 +234,10 @@ export class LeadService {
         status: "NEW",
       },
       update: {},
+      include: leadInclude,
     });
+    publishLeadCreated(companyId, lead);
+    return lead;
   }
 
   async findOrCreateByPhone(
@@ -226,7 +255,7 @@ export class LeadService {
     });
 
     if (!lead) {
-      lead = await prisma.lead.create({
+      const created = await prisma.lead.create({
         data: {
           name: name || normalized,
           phone: normalized,
@@ -235,9 +264,12 @@ export class LeadService {
           temperature: "COLD",
           status: "NEW",
         },
+        include: leadInclude,
       });
+      lead = created;
 
       console.log("✅ [LEAD] Criado via findOrCreate:", lead.id);
+      publishLeadCreated(companyId, created);
     } else if (avatarUrl && !lead.avatarUrl) {
       lead = await prisma.lead.update({
         where: { id: lead.id },

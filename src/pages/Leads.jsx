@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { statusLabels, tempLabels } from "@/components/leads/lead-labels";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { leadsApi, conversationsApi } from "@/api/apiClient";
@@ -45,22 +46,6 @@ const tempIcons = {
   WARM: ThermometerSun,
   COLD: Snowflake,
   CONVERTED: CheckCircle2,
-};
-
-const tempLabels = {
-  HOT: "Quente",
-  WARM: "Morno",
-  COLD: "Frio",
-  CONVERTED: "Convertido",
-};
-
-const statusLabels = {
-  NEW: "Novo",
-  IN_ATTENDANCE: "Em Atendimento",
-  WAITING: "Aguardando",
-  FOLLOW_UP: "Follow-up",
-  CLOSED: "Fechado",
-  LOST: "Perdido",
 };
 
 export default function Leads() {

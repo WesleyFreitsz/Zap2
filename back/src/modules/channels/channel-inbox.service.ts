@@ -10,6 +10,7 @@ import { saveMediaBuffer } from "../../utils/media";
 import { graphRequest } from "../meta/meta-graph.client";
 import { downloadInboundMedia } from "../meta/meta-media";
 import type { InboundMedia, InboundMessage, MessageEvent } from "../meta/meta-webhook";
+import { notifyClientMessage } from "../automations/client-message.events";
 import { UserService } from "../users/user.service";
 
 const userService = new UserService();
@@ -138,7 +139,10 @@ export async function ingestInbound(inbound: InboundMessage): Promise<void> {
   if (!updated) return;
   emitMessageCreated(updated.conversation);
   if (inbound.media) {
-    void attachInboundMedia(updated.messageId, updated.conversation, inbound.media, integration.accessTokenEncrypted);
+    void attachInboundMedia(updated.messageId, updated.conversation, inbound.media, integration.accessTokenEncrypted)
+      .then(() => notifyClientMessage(updated.messageId));
+  } else {
+    void notifyClientMessage(updated.messageId);
   }
 }
 

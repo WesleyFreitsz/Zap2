@@ -15,6 +15,7 @@ interface ServerEvents {
   "message:updated": (event: { conversationId: string }) => void;
   "conversation:updated": (event: { conversationId: string }) => void;
   "conversation:typing": (event: { conversationId: string; typing: boolean }) => void;
+  "lead:updated": (event: { leadId: string }) => void;
 }
 
 let realtime: Server<Record<string, never>, ServerEvents> | undefined;
@@ -102,4 +103,9 @@ export function emitConversationUpdated(
   previousAssigneeId?: string | null,
 ) {
   emitToConversation("conversation:updated", conversation, previousAssigneeId);
+}
+
+export function emitLeadUpdated(companyId: string, leadId: string, userIds: Array<string | null>) {
+  const rooms = [`company:${companyId}:staff`, ...new Set(userIds.filter(Boolean).map((id) => `user:${id}`))];
+  realtime?.to(rooms).emit("lead:updated", { leadId });
 }
